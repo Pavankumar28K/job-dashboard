@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Job Application Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Job Applications</h1>
+          <div class="folder-line" id="folderLine">Loading folders...</div>
+        </div>
+        <div class="top-actions">
+          <button id="refreshCsvBtn" class="button secondary">Search Web + Portals</button>
+          <button id="addJobBtn" class="button primary">Add Job</button>
+        </div>
+      </header>
+
+      <section class="view-panel" aria-label="Job dashboard views">
+        <div class="segmented" role="group" aria-label="Job view">
+          <button id="dailyViewBtn" class="segment active" type="button">Daily Jobs</button>
+          <button id="appliedViewBtn" class="segment" type="button">All Applied</button>
+          <button id="allJobsViewBtn" class="segment" type="button">All Jobs</button>
+        </div>
+        <div class="view-note" id="viewNote">Showing jobs found for the selected date.</div>
+      </section>
+
+      <section class="day-panel" aria-label="Daily application summary">
+        <div class="date-control">
+          <label for="dateFilter">Application Date</label>
+          <input id="dateFilter" class="input" type="date" />
+        </div>
+        <button id="todayBtn" class="button secondary">Today</button>
+        <div class="daily-target">
+          <div class="target-head">
+            <span>Daily Target</span>
+            <strong id="targetText">0 / 50</strong>
+          </div>
+          <div class="progress-bar" aria-hidden="true">
+            <div id="targetFill" class="progress-fill"></div>
+          </div>
+        </div>
+        <div class="day-summary">
+          <div class="day-status" id="dayStatus">Loading daily jobs...</div>
+          <div class="refresh-status" id="refreshStatus">Manual search only</div>
+        </div>
+      </section>
+
+      <section class="metrics" id="metrics"></section>
+
+      <main class="layout">
+        <section class="job-list-panel">
+          <div class="filters">
+            <input id="searchInput" class="input" placeholder="Search company, role, portal, skill..." />
+            <select id="statusFilter" class="select">
+              <option value="all">All statuses</option>
+              <option value="Apply-ready">Apply-ready</option>
+              <option value="Ready">Ready</option>
+              <option value="Applied">Applied</option>
+              <option value="not-applied">Not applied</option>
+              <option value="Blocked">Blocked</option>
+            </select>
+            <select id="sourceFilter" class="select">
+              <option value="all">All portals</option>
+            </select>
+          </div>
+          <div class="job-table-wrap">
+            <table class="job-table">
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Portal</th>
+                  <th>Pay</th>
+                  <th>Score</th>
+                  <th>Status</th>
+                  <th>Resume / JD</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="jobRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="detail-panel" id="detailPanel">
+          <div class="empty-state">Select a job to view details.</div>
+        </aside>
+      </main>
+    </div>
+
+    <div class="chat-widget" id="chatWidget">
+      <button id="chatLauncher" class="chat-launcher" type="button">Chat</button>
+      <section class="chat-panel" aria-label="Job search assistant">
+        <div class="chat-head">
+          <div>
+            <h2>Search Assistant</h2>
+            <span id="chatStatus" class="chat-status">Ready</span>
+          </div>
+          <div class="chat-controls">
+            <button id="chatMinimizeBtn" class="icon-button" type="button" aria-label="Minimize chat">-</button>
+            <button id="chatCloseBtn" class="icon-button" type="button" aria-label="Close chat">X</button>
+          </div>
+        </div>
+        <div class="chat-body">
+          <div class="chat-quick-actions" aria-label="Quick portal searches">
+            <button class="chat-chip" type="button" data-chat-prompt="search all portals">All portals</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search Infosys portal">Infosys</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search Dice portal">Dice</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search LinkedIn portal">LinkedIn</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search Kforce portal">Kforce</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search Capgemini portal">Capgemini</button>
+          </div>
+          <div class="chat-log" id="chatLog"></div>
+          <form id="chatForm" class="chat-form">
+            <input id="chatInput" class="input" placeholder="Search Infosys portal..." autocomplete="off" />
+            <button id="chatSubmitBtn" class="button primary" type="submit">Send</button>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <dialog id="jobDialog">
+      <form method="dialog" class="dialog-content" id="jobForm">
+        <div class="dialog-head">
+          <h2>Add Job</h2>
+          <button type="button" id="closeDialogBtn" class="icon-button" aria-label="Close">X</button>
+        </div>
+        <label>Company <input name="company" class="input" required /></label>
+        <label>Role <input name="role" class="input" required /></label>
+        <div class="two-col">
+          <label>Date Found <input id="dialogDateFound" name="dateFound" class="input" type="date" /></label>
+          <label>Portal <input name="source" class="input" placeholder="LinkedIn, Dice, Indeed..." /></label>
+        </div>
+        <label>Job link <input name="url" class="input" /></label>
+        <div class="two-col">
+          <label>Location <input name="location" class="input" /></label>
+          <label>Pay <input name="pay" class="input" placeholder="$55/hr, $120k..." /></label>
+        </div>
+        <label>JD / notes <textarea name="jd" class="textarea" rows="8"></textarea></label>
+        <div class="dialog-actions">
+          <button type="button" id="cancelDialogBtn" class="button secondary">Cancel</button>
+          <button class="button primary">Save Job</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

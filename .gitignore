@@ -1,0 +1,9 @@
+data/*.json
+logs/
+server.pid
+*.log
+__pycache__/
+*.pyc
+node_modules/
+.env
+.DS_Store
