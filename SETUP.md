@@ -194,7 +194,46 @@ UPLOAD_LATEST_TAILORED_RESUME_<Name>.docx
 
 Use that shorter file name if a browser upload dialog does not show long file names cleanly.
 
-## Git Push For The Owner
+## Azure DevOps Push For The Owner
+
+Azure student accounts can use Azure DevOps repos. Azure subscription and Azure DevOps are related Microsoft services, but the repo lives in Azure DevOps at:
+
+```text
+https://dev.azure.com
+```
+
+Create the remote repo:
+
+1. Go to `https://dev.azure.com`.
+2. Sign in with your Microsoft student account.
+3. Create an organization if Azure DevOps asks for one.
+4. Create a project, for example `job-dashboard`.
+5. Choose **Private** visibility unless you intentionally want the code public.
+6. Open **Repos**.
+7. Create a repository named `job-dashboard`.
+8. Copy the HTTPS clone URL. It looks like:
+
+```text
+https://dev.azure.com/<organization>/<project>/_git/<repo-name>
+```
+
+Push this local repo:
+
+```bash
+git remote add origin https://dev.azure.com/<organization>/<project>/_git/<repo-name>
+git push -u origin main
+```
+
+If `origin` already exists:
+
+```bash
+git remote set-url origin https://dev.azure.com/<organization>/<project>/_git/<repo-name>
+git push -u origin main
+```
+
+On the first push, Git Credential Manager may open a Microsoft login window. Sign in with the same Azure DevOps account.
+
+## GitHub Push For The Owner
 
 After creating an empty GitHub repository, add the remote and push:
 
