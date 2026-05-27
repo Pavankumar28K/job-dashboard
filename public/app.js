@@ -343,9 +343,9 @@ function renderDetail() {
       </select></div>
       <div class="field"><label>Resume Version</label><select id="resumeInput" class="select">
         ${[
-          "Venkatesh_Dorolla_FullStack_NET_Cloud.docx",
-          "Venkatesh_Dorolla_FullStack_NET_Cloud_AI.docx",
-          "Venkatesh_Dorolla_AI_Cloud_Engineer.docx",
+          "Candidate_FullStack_NET_Cloud.docx",
+          "Candidate_FullStack_NET_Cloud_AI.docx",
+          "Candidate_AI_Cloud_Engineer.docx",
         ]
           .map((value) => `<option ${job.selectedResume === value ? "selected" : ""}>${value}</option>`)
           .join("")}

@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import shutil
 import sys
@@ -11,20 +12,48 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
-DATA_PATH = APP_DIR / "data" / "jobs.json"
-SOURCE_DIR = Path(r"C:\Users\16605\Documents\Codex\2026-05-13\if-i-upload-resume-will-you")
-JOB_ROOT = Path(r"C:\Users\16605\Desktop\job application")
+
+
+def configured_path(env_name, fallback):
+    return Path(os.environ.get(env_name, fallback)).expanduser().resolve()
+
+
+DATA_PATH = configured_path("DASHBOARD_JOBS", APP_DIR / "data" / "jobs.json")
+JOB_ROOT = configured_path("JOB_APP_ROOT", Path.home() / "Desktop" / "job application")
 TAILORED_DIR = JOB_ROOT / "resume" / "tailored resume"
 COVER_DIR = JOB_ROOT / "cover letters"
 JD_DIR = JOB_ROOT / "job descriptions"
+PROFILE_DIR = configured_path("RESUME_PROFILE_DIR", APP_DIR / "tools")
 
-sys.path.insert(0, str(SOURCE_DIR))
-import build_resume_versions as base  # noqa: E402
+sys.path.insert(0, str(PROFILE_DIR))
+try:
+    import build_resume_versions as base  # noqa: E402
+except ImportError as error:
+    raise SystemExit(
+        "Resume profile is not configured. Copy tools/build_resume_versions.example.py "
+        "to tools/build_resume_versions.py and update it with your own resume details."
+    ) from error
 
 
 def safe_name(value, limit=70):
     cleaned = re.sub(r"[^A-Za-z0-9]+", "_", value or "").strip("_")
     return cleaned[:limit] or "Job"
+
+
+def candidate_name():
+    explicit = getattr(base, "CANDIDATE_NAME", "")
+    if explicit:
+        return explicit
+    contact = getattr(base, "CONTACT", "")
+    return contact.split("|", 1)[0].strip() or "Candidate"
+
+
+def candidate_safe_name():
+    return safe_name(candidate_name(), 40)
+
+
+def contact_line():
+    return getattr(base, "CONTACT", "") or f"{candidate_name()} | email@example.com | linkedin.com/in/profile"
 
 
 def load_job(job_id):
@@ -93,7 +122,7 @@ def tailor_version(job):
     cloud_heavy = any(item in keywords for item in ["Azure", "Cloud deployment", "CI/CD"])
 
     role_focus = " | ".join(keywords[:4]) if keywords else ".NET | Azure | API Delivery"
-    version["filename"] = f"{job['id']}_{safe_name(company, 32)}_{safe_name(role, 40)}_Venkatesh_Dorolla.docx"
+    version["filename"] = f"{job['id']}_{safe_name(company, 32)}_{safe_name(role, 40)}_{candidate_safe_name()}.docx"
     version["title"] = f"Senior Full Stack .NET Developer | {role_focus}"
     version["summary"] = (
         f"Senior Full Stack .NET Developer with 6+ years of experience delivering enterprise applications, secure APIs, "
@@ -125,8 +154,8 @@ def make_resume(job):
             pass
     base.OUT_DIR = str(TAILORED_DIR)
     original = Path(base.build(tailor_version(job)))
-    upload_copy = TAILORED_DIR / f"UPLOAD_{safe_name(job['id'], 28)}_Venkatesh_Dorolla.docx"
-    latest_copy = TAILORED_DIR / "UPLOAD_LATEST_TAILORED_RESUME_Venkatesh_Dorolla.docx"
+    upload_copy = TAILORED_DIR / f"UPLOAD_{safe_name(job['id'], 28)}_{candidate_safe_name()}.docx"
+    latest_copy = TAILORED_DIR / f"UPLOAD_LATEST_TAILORED_RESUME_{candidate_safe_name()}.docx"
     shutil.copy2(original, upload_copy)
     shutil.copy2(original, latest_copy)
     return upload_copy
@@ -160,10 +189,10 @@ def make_cover(job):
     doc.styles["Normal"].font.name = "Calibri"
     doc.styles["Normal"].font.size = Pt(10.5)
 
-    paragraph(doc, "Venkatesh Dorolla", size=16, bold=True, color=RGBColor(31, 78, 121), align=WD_ALIGN_PARAGRAPH.CENTER, after=1)
+    paragraph(doc, candidate_name(), size=16, bold=True, color=RGBColor(31, 78, 121), align=WD_ALIGN_PARAGRAPH.CENTER, after=1)
     paragraph(
         doc,
-        "+1 (660) 580-5592 | dvenkatesh0081@gmail.com | linkedin.com/in/venkatesh-d369 | Iselin, NJ",
+        contact_line(),
         size=9.5,
         align=WD_ALIGN_PARAGRAPH.CENTER,
         after=12,
@@ -187,12 +216,12 @@ def make_cover(job):
             "I am currently authorized to work in the United States on F-1 OPT EAD and am open to remote, hybrid, or onsite work depending "
             "on the role and contract terms."
         ),
-        "Sincerely,\nVenkatesh Dorolla",
+        f"Sincerely,\n{candidate_name()}",
     ]
     for line in lines:
         paragraph(doc, line)
 
-    out = COVER_DIR / f"{job['id']}_{safe_name(company, 32)}_{safe_name(role, 40)}_Cover_Letter_Venkatesh_Dorolla.docx"
+    out = COVER_DIR / f"{job['id']}_{safe_name(company, 32)}_{safe_name(role, 40)}_Cover_Letter_{candidate_safe_name()}.docx"
     doc.save(out)
     return out
 

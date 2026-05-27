@@ -2,6 +2,7 @@ import argparse
 import csv
 import html
 import json
+import os
 import re
 import sys
 import time
@@ -14,9 +15,15 @@ from xml.etree import ElementTree as ET
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
-WORKSPACE = Path(r"C:\Users\16605\Documents\Codex\2026-05-13\if-i-upload-resume-will-you")
-CSV_PATH = WORKSPACE / "tracker" / "Venkatesh_Dorolla_Job_Tracker.csv"
-DASHBOARD_JOBS = Path(r"C:\Users\16605\Desktop\job application\job dashboard\data\jobs.json")
+
+
+def configured_path(env_name, fallback):
+    return Path(os.environ.get(env_name, fallback)).expanduser().resolve()
+
+
+JOB_ROOT = configured_path("JOB_APP_ROOT", Path.home() / "Desktop" / "job application")
+CSV_PATH = configured_path("JOB_TRACKER_CSV", JOB_ROOT / "tracker" / "job_tracker.csv")
+DASHBOARD_JOBS = configured_path("DASHBOARD_JOBS", APP_DIR / "data" / "jobs.json")
 LOG_DIR = APP_DIR / "logs"
 LOG_PATH = LOG_DIR / "job_finder.log"
 LOCK_PATH = LOG_DIR / "job_finder.lock"
@@ -386,10 +393,10 @@ def score_job(title, summary, company="", pay="", work_mode=""):
 def selected_resume(title, summary):
     text = f"{title} {summary}".lower()
     if re.search(r"\b(ai|openai|genai|rag|machine learning|ml|copilot)\b", text):
-        return "Venkatesh_Dorolla_FullStack_NET_Cloud_AI.docx"
+        return "Candidate_FullStack_NET_Cloud_AI.docx"
     if "azure" in text or "cloud" in text:
-        return "Venkatesh_Dorolla_FullStack_NET_Cloud.docx"
-    return "Venkatesh_Dorolla_FullStack_NET_Cloud.docx"
+        return "Candidate_FullStack_NET_Cloud.docx"
+    return "Candidate_FullStack_NET_Cloud.docx"
 
 
 def priority(score, status):

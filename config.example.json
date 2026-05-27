@@ -1,0 +1,5 @@
+{
+  "appRoot": "~/Desktop/job application",
+  "trackerCsv": "~/Desktop/job application/tracker/job_tracker.csv",
+  "pythonExe": "python3"
+}

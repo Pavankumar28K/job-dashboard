@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const fsp = require("fs/promises");
+const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
 const url = require("url");
@@ -11,29 +12,30 @@ const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
 const JOBS_PATH = path.join(DATA_DIR, "jobs.json");
 const ACTIVITY_PATH = path.join(DATA_DIR, "activity.json");
-const CSV_SOURCE = path.join(
-  "C:",
-  "Users",
-  "16605",
-  "Documents",
-  "Codex",
-  "2026-05-13",
-  "if-i-upload-resume-will-you",
-  "tracker",
-  "Venkatesh_Dorolla_Job_Tracker.csv"
+const CONFIG_PATH = path.join(ROOT, "config.local.json");
+
+function readConfig() {
+  if (!fs.existsSync(CONFIG_PATH)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+  } catch (error) {
+    console.warn(`Could not read config.local.json: ${error.message}`);
+    return {};
+  }
+}
+
+function resolvePath(value, fallback) {
+  const selected = value || fallback;
+  return path.resolve(String(selected).replace(/^~(?=$|[\\/])/, os.homedir()));
+}
+
+const CONFIG = readConfig();
+const APP_ROOT = resolvePath(process.env.JOB_APP_ROOT || CONFIG.appRoot, path.join(os.homedir(), "Desktop", "job application"));
+const CSV_SOURCE = resolvePath(
+  process.env.JOB_TRACKER_CSV || CONFIG.trackerCsv,
+  path.join(APP_ROOT, "tracker", "job_tracker.csv")
 );
-const PYTHON_EXE = path.join(
-  "C:",
-  "Users",
-  "16605",
-  ".cache",
-  "codex-runtimes",
-  "codex-primary-runtime",
-  "dependencies",
-  "python",
-  "python.exe"
-);
-const APP_ROOT = path.join("C:", "Users", "16605", "Desktop", "job application");
+const PYTHON_EXE = process.env.PYTHON_EXE || CONFIG.pythonExe || (process.platform === "win32" ? "python" : "python3");
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -269,9 +271,9 @@ function isAppliedStatus(status) {
 function pickResume(job) {
   const haystack = `${job.role || ""} ${job.notes || ""} ${job.jd || ""}`.toLowerCase();
   if (/(azure openai|ai|rag|genai|agent|machine learning|ml)/.test(haystack)) {
-    return "Venkatesh_Dorolla_FullStack_NET_Cloud_AI.docx";
+    return "Candidate_FullStack_NET_Cloud_AI.docx";
   }
-  return "Venkatesh_Dorolla_FullStack_NET_Cloud.docx";
+  return "Candidate_FullStack_NET_Cloud.docx";
 }
 
 function cleanTextKey(value) {
@@ -342,6 +344,13 @@ function runGenerator(job, kind) {
   return new Promise((resolve, reject) => {
     const child = spawn(PYTHON_EXE, [path.join(ROOT, "tools", "generate_documents.py"), kind, job.id], {
       cwd: ROOT,
+      env: {
+        ...process.env,
+        JOB_APP_ROOT: APP_ROOT,
+        JOB_TRACKER_CSV: CSV_SOURCE,
+        DASHBOARD_JOBS: JOBS_PATH,
+        RESUME_PROFILE_DIR: path.join(ROOT, "tools"),
+      },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -367,6 +376,12 @@ function runJobFinder(args = []) {
   return new Promise((resolve, reject) => {
     const child = spawn(PYTHON_EXE, [path.join(ROOT, "tools", "find_jobs.py"), ...args], {
       cwd: ROOT,
+      env: {
+        ...process.env,
+        JOB_APP_ROOT: APP_ROOT,
+        JOB_TRACKER_CSV: CSV_SOURCE,
+        DASHBOARD_JOBS: JOBS_PATH,
+      },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
