@@ -66,9 +66,183 @@ MAX_SOURCE_WORKERS = 8
 USER_EXPERIENCE_YEARS = 6
 MAX_ACCEPTABLE_REQUIRED_YEARS = 7
 INFOSYS_CAREER_API = "https://intapgateway.infosysapps.com/careersci/search/intapjbsrch/getCareerSearchJobs"
+MAX_COMPANY_PAGES = 12
+JOB_LINK_WORDS = (
+    "job",
+    "jobs",
+    "career",
+    "careers",
+    "position",
+    "positions",
+    "opening",
+    "openings",
+    "opportunity",
+    "opportunities",
+    "greenhouse",
+    "lever",
+    "workday",
+    "smartrecruiters",
+    "ashby",
+    "icims",
+)
+US_LOCATION_TERMS = {
+    "united states",
+    "usa",
+    "u.s.",
+    "u.s.a.",
+    "us",
+}
+US_STATE_NAMES = {
+    "alabama",
+    "alaska",
+    "arizona",
+    "arkansas",
+    "california",
+    "colorado",
+    "connecticut",
+    "delaware",
+    "florida",
+    "georgia",
+    "hawaii",
+    "idaho",
+    "illinois",
+    "indiana",
+    "iowa",
+    "kansas",
+    "kentucky",
+    "louisiana",
+    "maine",
+    "maryland",
+    "massachusetts",
+    "michigan",
+    "minnesota",
+    "mississippi",
+    "missouri",
+    "montana",
+    "nebraska",
+    "nevada",
+    "new hampshire",
+    "new jersey",
+    "new mexico",
+    "new york",
+    "north carolina",
+    "north dakota",
+    "ohio",
+    "oklahoma",
+    "oregon",
+    "pennsylvania",
+    "rhode island",
+    "south carolina",
+    "south dakota",
+    "tennessee",
+    "texas",
+    "utah",
+    "vermont",
+    "virginia",
+    "washington",
+    "west virginia",
+    "wisconsin",
+    "wyoming",
+    "district of columbia",
+}
+US_STATE_ABBRS = {
+    "al",
+    "ak",
+    "az",
+    "ar",
+    "ca",
+    "co",
+    "ct",
+    "de",
+    "fl",
+    "ga",
+    "hi",
+    "id",
+    "il",
+    "in",
+    "ia",
+    "ks",
+    "ky",
+    "la",
+    "me",
+    "md",
+    "ma",
+    "mi",
+    "mn",
+    "ms",
+    "mo",
+    "mt",
+    "ne",
+    "nv",
+    "nh",
+    "nj",
+    "nm",
+    "ny",
+    "nc",
+    "nd",
+    "oh",
+    "ok",
+    "or",
+    "pa",
+    "ri",
+    "sc",
+    "sd",
+    "tn",
+    "tx",
+    "ut",
+    "vt",
+    "va",
+    "wa",
+    "wv",
+    "wi",
+    "wy",
+    "dc",
+}
+NON_US_LOCATION_TERMS = {
+    "argentina",
+    "australia",
+    "austria",
+    "bangalore",
+    "belgium",
+    "bengaluru",
+    "brazil",
+    "canada",
+    "chile",
+    "china",
+    "costa rica",
+    "denmark",
+    "europe",
+    "france",
+    "germany",
+    "global",
+    "hyderabad",
+    "india",
+    "ireland",
+    "israel",
+    "italy",
+    "japan",
+    "mexico",
+    "netherlands",
+    "poland",
+    "portugal",
+    "romania",
+    "singapore",
+    "spain",
+    "sweden",
+    "switzerland",
+    "ukraine",
+    "united kingdom",
+    "worldwide",
+}
 
 BING_RSS_SOURCES = [
+    ("Wellfound", 'site:wellfound.com/jobs ".NET" developer United States', ("wellfound.com",)),
+    ("Glassdoor", 'site:glassdoor.com/job ".NET" developer United States', ("glassdoor.com",)),
+    ("College Recruiter", 'site:collegerecruiter.com/job ".NET" developer United States', ("collegerecruiter.com",)),
+    ("The Forage", 'site:theforage.com/jobs ".NET" developer United States', ("theforage.com",)),
+    ("WayUp", 'site:wayup.com/jobs ".NET" developer United States', ("wayup.com",)),
     ("Kforce", 'site:kforce.com/jobs ".NET" Azure developer United States', ("kforce.com",)),
+    ("Vaco", 'site:vaco.com/jobs ".NET" developer United States', ("vaco.com",)),
     ("Insight Global", 'site:insightglobal.com/jobs ".NET" Azure developer United States', ("insightglobal.com",)),
     ("TCS Careers", 'site:tcs.com/careers ".NET" Azure developer United States', ("tcs.com",)),
     ("Infosys Careers", 'site:career.infosys.com ".NET" Azure developer', ("infosys.com", "infosysapps.com")),
@@ -95,8 +269,6 @@ PORTAL_ALIASES = {
     "dice": ("Dice",),
     "linkedin": ("LinkedIn",),
     "linked in": ("LinkedIn",),
-    "simplyhired": ("SimplyHired",),
-    "simply hired": ("SimplyHired",),
     "builtin": ("BuiltIn",),
     "built in": ("BuiltIn",),
     "remotive": ("Remotive",),
@@ -109,6 +281,8 @@ PORTAL_ALIASES = {
     "career.infosys": ("Infosys Careers",),
     "kforce": ("Kforce",),
     "insight global": ("Insight Global",),
+    "insightglobal": ("Insight Global",),
+    "insightglobal.com": ("Insight Global",),
     "tcs": ("TCS Careers",),
     "tcs careers": ("TCS Careers",),
     "wipro": ("Wipro Careers",),
@@ -171,7 +345,7 @@ def normalized_source_key(value):
 
 
 def source_catalog():
-    direct = ["Dice", "LinkedIn", "SimplyHired", "BuiltIn", "Remotive", "Jobicy", "Himalayas", "The Muse", "Infosys Careers"]
+    direct = ["Dice", "LinkedIn", "BuiltIn", "Remotive", "Jobicy", "Himalayas", "The Muse", "Infosys Careers"]
     return direct + [source for source, _query, _domains in BING_RSS_SOURCES]
 
 
@@ -296,6 +470,15 @@ def canonical_url(value):
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), "", "")).lower()
 
 
+def normalize_input_url(value):
+    text = clean_text(value)
+    if not text:
+        return ""
+    if not re.match(r"^https?://", text, flags=re.I):
+        text = f"https://{text}"
+    return text
+
+
 def text_key(row):
     return "|".join(clean_text(row.get(key, "")).lower() for key in ("Company", "Role", "Location"))
 
@@ -345,6 +528,27 @@ def has_hard_block(text):
         "must be a u.s. citizen",
     ]
     return any(block in lowered for block in blocks)
+
+
+def is_us_location(location, summary=""):
+    location_text = clean_text(location).lower()
+    if not location_text:
+        return True
+    normalized = re.sub(r"[^a-z0-9.]+", " ", location_text)
+    tokens = set(re.findall(r"\b[a-z]{2}\b", normalized))
+    if any(re.search(rf"\b{re.escape(term)}\b", normalized) for term in US_LOCATION_TERMS):
+        return True
+    if any(re.search(rf"\b{re.escape(state)}\b", normalized) for state in US_STATE_NAMES):
+        return True
+    if tokens & US_STATE_ABBRS:
+        return True
+    if any(re.search(rf"\b{re.escape(term)}\b", normalized) for term in NON_US_LOCATION_TERMS):
+        return False
+
+    summary_text = clean_text(summary).lower()
+    if re.search(r"\b(united states|usa|u\.s\.|us only|within the us|within u\.s\.)\b", summary_text):
+        return True
+    return False
 
 
 def pay_too_low(pay):
@@ -417,6 +621,8 @@ def build_row(source, url, title, company, location, posted, employment, pay, su
     employment = clean_text(employment)
     pay = clean_text(pay) or "Not listed"
     work_mode = clean_text(work_mode)
+    if not is_us_location(location, summary):
+        return None, "non_us_location"
     blob = f"{title} {company} {location} {employment} {pay} {summary}"
     required_years = required_experience_years(blob)
     if required_years > MAX_ACCEPTABLE_REQUIRED_YEARS:
@@ -925,6 +1131,180 @@ def parse_themuse(text):
     return jobs
 
 
+def extract_links(base_url, text):
+    links = []
+    for raw in re.findall(r'href=["\']([^"\']+)["\']', text, flags=re.I):
+        if raw.startswith(("#", "mailto:", "tel:", "javascript:")):
+            continue
+        absolute = urljoin(base_url, html.unescape(raw))
+        try:
+            parts = urlsplit(absolute)
+        except Exception:
+            continue
+        if parts.scheme not in {"http", "https"} or not parts.netloc:
+            continue
+        links.append(urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, "")))
+    return links
+
+
+def is_job_related_url(url):
+    lowered = unquote(url).lower()
+    return any(word in lowered for word in JOB_LINK_WORDS)
+
+
+def is_same_or_ats_domain(url, root_host):
+    host = urlsplit(url).netloc.lower()
+    root = root_host.lower().removeprefix("www.")
+    host_root = host.removeprefix("www.")
+    ats_domains = (
+        "greenhouse.io",
+        "lever.co",
+        "myworkdayjobs.com",
+        "smartrecruiters.com",
+        "ashbyhq.com",
+        "icims.com",
+        "bamboohr.com",
+        "jobvite.com",
+        "recruitee.com",
+        "workable.com",
+    )
+    return host_root == root or host_root.endswith(f".{root}") or any(domain in host_root for domain in ats_domains)
+
+
+def company_name_from_site(url):
+    host = urlsplit(url).netloc.lower().removeprefix("www.")
+    label = host.split(".")[0]
+    return pretty_company(label) or "Company not listed"
+
+
+def parse_json_ld_jobs(text, page_url, fallback_company):
+    jobs = []
+    for script in re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', text, flags=re.I | re.S):
+        try:
+            data = json.loads(html.unescape(script).strip())
+        except Exception:
+            continue
+        nodes = data if isinstance(data, list) else [data]
+        expanded = []
+        for node in nodes:
+            if isinstance(node, dict) and isinstance(node.get("@graph"), list):
+                expanded.extend(node["@graph"])
+            else:
+                expanded.append(node)
+        for node in expanded:
+            if not isinstance(node, dict):
+                continue
+            node_type = node.get("@type", "")
+            if isinstance(node_type, list):
+                is_job = any(str(item).lower() == "jobposting" for item in node_type)
+            else:
+                is_job = str(node_type).lower() == "jobposting"
+            if not is_job:
+                continue
+            organization = node.get("hiringOrganization") or {}
+            if isinstance(organization, dict):
+                company = organization.get("name") or fallback_company
+            else:
+                company = fallback_company
+            location_values = []
+            raw_locations = node.get("jobLocation") or node.get("applicantLocationRequirements") or []
+            if isinstance(raw_locations, dict):
+                raw_locations = [raw_locations]
+            for location in raw_locations if isinstance(raw_locations, list) else []:
+                if not isinstance(location, dict):
+                    continue
+                address = location.get("address") or location
+                if isinstance(address, dict):
+                    location_values.append(
+                        clean_text(
+                            ", ".join(
+                                str(address.get(key, ""))
+                                for key in ("addressLocality", "addressRegion", "addressCountry")
+                                if address.get(key)
+                            )
+                        )
+                    )
+            location_text = ", ".join(value for value in location_values if value) or "United States"
+            row, reason = build_row(
+                fallback_company,
+                node.get("url") or page_url,
+                node.get("title", ""),
+                company,
+                location_text,
+                clean_text(node.get("datePosted", ""))[:10] or "Company site recent",
+                node.get("employmentType", "Not listed"),
+                clean_text(node.get("baseSalary", "")) or "Not listed",
+                node.get("description", ""),
+                "Remote/Hybrid/Onsite not listed",
+            )
+            if row:
+                jobs.append(row)
+    return jobs
+
+
+def parse_company_page_jobs(text, page_url, fallback_company):
+    jobs = parse_json_ld_jobs(text, page_url, fallback_company)
+    if jobs:
+        return jobs
+    page_title = ""
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", text, flags=re.I | re.S)
+    if title_match:
+        page_title = clean_text(title_match.group(1))
+    if not re.search(r"\b(developer|engineer|architect|\.net|software|full.?stack|angular|c#)\b", page_title, flags=re.I):
+        heading = re.search(r"<h1[^>]*>(.*?)</h1>", text, flags=re.I | re.S)
+        page_title = clean_text(heading.group(1)) if heading else page_title
+    if not re.search(r"\b(developer|engineer|architect|\.net|software|full.?stack|angular|c#)\b", page_title, flags=re.I):
+        return jobs
+    page_text = clean_text(text)
+    row, reason = build_row(
+        fallback_company,
+        page_url,
+        page_title,
+        fallback_company,
+        "United States" if is_us_location("United States", page_text) else "",
+        "Verify on company site",
+        "Not listed",
+        "Not listed",
+        page_text[:2000],
+        "Remote/Hybrid/Onsite not listed",
+    )
+    if row:
+        jobs.append(row)
+    return jobs
+
+
+def collect_company_site(company_url):
+    start_url = normalize_input_url(company_url)
+    root_host = urlsplit(start_url).netloc
+    company = company_name_from_site(start_url)
+    candidates = []
+    failures = []
+    seen_pages = set()
+    queue = [start_url]
+    requests = 0
+    while queue and requests < MAX_COMPANY_PAGES:
+        current = queue.pop(0)
+        key = canonical_url(current)
+        if key in seen_pages:
+            continue
+        seen_pages.add(key)
+        try:
+            page = fetch(current, timeout=12)
+            requests += 1
+        except Exception as error:
+            failures.append(f"{current} failed: {str(error)[:120]}")
+            continue
+        candidates.extend(parse_company_page_jobs(page, current, company))
+        for link in extract_links(current, page):
+            link_key = canonical_url(link)
+            if link_key in seen_pages or link in queue:
+                continue
+            if is_same_or_ats_domain(link, root_host) and is_job_related_url(link):
+                queue.append(link)
+        queue = queue[:MAX_COMPANY_PAGES]
+    return candidates, failures, {company: len(candidates)}, requests
+
+
 def source_requests(selected_sources=None):
     def allowed(source):
         return selected_sources is None or source in selected_sources
@@ -935,9 +1315,6 @@ def source_requests(selected_sources=None):
     if allowed("LinkedIn"):
         for url in linkedin_search_urls():
             yield "LinkedIn", url, parse_linkedin
-    if allowed("SimplyHired"):
-        for url in simplyhired_search_urls():
-            yield "SimplyHired", url, parse_simplyhired
     if allowed("BuiltIn"):
         for url in builtin_search_urls():
             yield "BuiltIn", url, parse_builtin
@@ -1042,6 +1419,7 @@ def merge_dashboard(rows):
 def main():
     parser = argparse.ArgumentParser(description="Find jobs for the local dashboard")
     parser.add_argument("--portal", default="", help="Optional portal/source name to search, such as Infosys or Dice")
+    parser.add_argument("--company-url", default="", help="Optional company careers or website URL to scan for jobs")
     args = parser.parse_args()
     selected_sources = selected_sources_for_portal(args.portal)
     started = time.time()
@@ -1089,7 +1467,10 @@ def main():
         id_gen = next_id(rows, date_value)
         seen_urls = {canonical_url(row.get("URL")) for row in rows if row.get("URL")}
         seen_text = {text_key(row) for row in rows if row.get("Company") or row.get("Role")}
-        candidates, failures, source_counts, requests_searched = collect_candidates(selected_sources)
+        if args.company_url:
+            candidates, failures, source_counts, requests_searched = collect_company_site(args.company_url)
+        else:
+            candidates, failures, source_counts, requests_searched = collect_candidates(selected_sources)
 
         added_rows = []
         duplicate_count = 0
@@ -1112,6 +1493,7 @@ def main():
         summary = {
             "date": date_value,
             "portal": args.portal,
+            "companyUrl": args.company_url,
             "selectedSources": sorted(selected_sources or []),
             "candidates": len(candidates),
             "added": len(added_rows),

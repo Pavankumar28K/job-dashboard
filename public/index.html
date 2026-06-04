@@ -63,6 +63,13 @@
               <option value="not-applied">Not applied</option>
               <option value="Blocked">Blocked</option>
             </select>
+            <select id="priorityFilter" class="select">
+              <option value="all">All priorities</option>
+              <option value="High">High priority</option>
+              <option value="Medium">Medium priority</option>
+              <option value="Low">Low priority</option>
+              <option value="Blocked">Blocked priority</option>
+            </select>
             <select id="sourceFilter" class="select">
               <option value="all">All portals</option>
             </select>
@@ -110,12 +117,19 @@
             <button class="chat-chip" type="button" data-chat-prompt="search Infosys portal">Infosys</button>
             <button class="chat-chip" type="button" data-chat-prompt="search Dice portal">Dice</button>
             <button class="chat-chip" type="button" data-chat-prompt="search LinkedIn portal">LinkedIn</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search Wellfound portal">Wellfound</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search Glassdoor portal">Glassdoor</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search College Recruiter portal">College Recruiter</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search The Forage portal">The Forage</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search WayUp portal">WayUp</button>
             <button class="chat-chip" type="button" data-chat-prompt="search Kforce portal">Kforce</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search Vaco portal">Vaco</button>
+            <button class="chat-chip" type="button" data-chat-prompt="search Insight Global portal">Insight Global</button>
             <button class="chat-chip" type="button" data-chat-prompt="search Capgemini portal">Capgemini</button>
           </div>
           <div class="chat-log" id="chatLog"></div>
           <form id="chatForm" class="chat-form">
-            <input id="chatInput" class="input" placeholder="Search Infosys portal..." autocomplete="off" />
+            <input id="chatInput" class="input" placeholder="Paste a JD, company careers URL, or portal search..." autocomplete="off" />
             <button id="chatSubmitBtn" class="button primary" type="submit">Send</button>
           </form>
         </div>

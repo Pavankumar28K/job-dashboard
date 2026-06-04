@@ -93,12 +93,18 @@ def keyword_hits(job):
         (".NET Core", [".net core", "dotnet core", ".net"]),
         ("ASP.NET Web API", ["web api", "asp.net", "api developer"]),
         ("REST APIs", ["rest", "api"]),
+        ("Angular 17", ["angular 17", "angular17"]),
         ("Angular", ["angular"]),
+        ("RxJS/NgRx", ["rxjs", "ngrx", "reactive forms", "state management"]),
         ("Azure", ["azure"]),
+        ("AWS", ["aws", "lambda", "ecs", "eks", "elastic container service", "elastic kubernetes service"]),
+        ("Docker/Kubernetes", ["docker", "container", "kubernetes", "eks", "ecs"]),
         ("Azure OpenAI", ["azure openai", "openai", "genai"]),
         ("RAG", ["rag", "retrieval"]),
         ("SQL Server", ["sql server", "t-sql", "database"]),
+        ("PostgreSQL", ["postgresql", "postgres"]),
         ("CI/CD", ["ci/cd", "devops", "azure devops", "jenkins"]),
+        ("Clean Architecture", ["clean architecture", "dependency injection"]),
         ("Microservices", ["microservice"]),
         ("OAuth2/JWT/RBAC", ["oauth", "jwt", "rbac", "authentication", "authorization"]),
         ("Agile/Scrum", ["agile", "scrum"]),
@@ -125,22 +131,20 @@ def tailor_version(job):
     version["filename"] = f"{job['id']}_{safe_name(company, 32)}_{safe_name(role, 40)}_{candidate_safe_name()}.docx"
     version["title"] = f"Senior Full Stack .NET Developer | {role_focus}"
     version["summary"] = (
-        f"Senior Full Stack .NET Developer with 6+ years of experience delivering enterprise applications, secure APIs, "
-        f"Angular front ends, SQL Server data layers, Azure cloud services, and CI/CD automation. Targeted for {company}'s "
+        f"Senior Full Stack .NET Developer with 5+ years of experience delivering production web applications, secure APIs, "
+        f"microservices, responsive Angular/React interfaces, SQL data platforms, and cloud-ready services. Tailored for {company}'s "
         f"{role} role with emphasis on {', '.join(keywords[:8]) if keywords else 'C#, .NET, Angular, Azure, SQL Server, APIs, Agile delivery, and production support'}. "
-        "Experienced across public sector, healthcare, insurance, and higher education workflows with strong focus on reliable delivery, "
-        "performance tuning, clean architecture, security, and stakeholder-facing systems."
+        "Known for clean architecture, performance tuning, reliable integrations, CI/CD delivery, and building systems that turn complex "
+        "business, healthcare, education, and AI-enabled workflows into maintainable production software."
     )
 
     if ai_heavy:
         version["experience_order"] = ["dotnet", "ai", "cloud", "integration", "bi"]
-        version["projects"] = ["rag", "cloud_task", "stock"]
     elif cloud_heavy:
         version["experience_order"] = ["dotnet", "cloud", "integration", "bi", "ai"]
-        version["projects"] = ["cloud_task", "stock", "rag"]
     else:
         version["experience_order"] = ["dotnet", "integration", "cloud", "bi", "ai"]
-        version["projects"] = ["stock", "cloud_task", "rag"]
+    version["projects"] = []
 
     return version
 

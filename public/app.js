@@ -6,6 +6,7 @@ const state = {
   folders: {},
   query: "",
   status: "all",
+  priority: "all",
   source: "all",
   date: todayString(),
   lastRefreshAt: null,
@@ -67,23 +68,27 @@ function normalizeDate(value) {
 }
 
 function isApplied(job) {
-  return /\bapplied\b/i.test(job.status || "");
+  return /^(applied|application submitted|submitted)$/i.test(String(job.status || "").trim());
 }
 
 function dailyJobs() {
   return state.jobs.filter((job) => normalizeDate(job.dateFound) === state.date);
 }
 
+function activeDailyJobs() {
+  return dailyJobs().filter((job) => !isApplied(job));
+}
+
 function baseJobsForView() {
   if (state.view === "applied") return state.jobs.filter(isApplied);
   if (state.view === "all") return state.jobs;
-  return dailyJobs();
+  return activeDailyJobs();
 }
 
 function viewLabel() {
   if (state.view === "applied") return "all applied jobs";
   if (state.view === "all") return "all saved jobs";
-  return `jobs for ${formatDate(state.date)}`;
+  return `active jobs for ${formatDate(state.date)}`;
 }
 
 function formatDate(value) {
@@ -163,8 +168,9 @@ function filteredJobs() {
     const matchesStatus =
       state.status === "all" ||
       (state.status === "not-applied" ? !isApplied(job) : (job.status || "").toLowerCase().includes(state.status.toLowerCase()));
+    const matchesPriority = state.priority === "all" || job.priority === state.priority;
     const matchesSource = state.source === "all" || job.source === state.source;
-    return matchesQuery && matchesStatus && matchesSource;
+    return matchesQuery && matchesStatus && matchesPriority && matchesSource;
   });
   return jobs.sort((a, b) => {
     if (state.view === "applied") {
@@ -185,9 +191,11 @@ function renderViewControls() {
   });
   const appliedCount = state.jobs.filter(isApplied).length;
   const totalCount = state.jobs.length;
-  const dailyCount = dailyJobs().length;
+  const dailyTotal = dailyJobs().length;
+  const dailyActive = activeDailyJobs().length;
+  const dailyApplied = dailyJobs().filter(isApplied).length;
   const notes = {
-    daily: `Showing ${dailyCount} jobs found for ${formatDate(state.date)}.`,
+    daily: `Showing ${dailyActive} active jobs for ${formatDate(state.date)}. ${dailyApplied} applied out of ${dailyTotal} found.`,
     applied: `Showing ${appliedCount} applied jobs across all dates, with resume and JD details for screening prep.`,
     all: `Showing all ${totalCount} saved jobs across every date.`,
   };
@@ -196,11 +204,14 @@ function renderViewControls() {
 
 function renderDateSummary() {
   const jobs = baseJobsForView();
-  const applied = jobs.filter(isApplied).length;
-  const notApplied = jobs.length - applied;
+  const allDailyJobs = dailyJobs();
+  const dailyApplied = allDailyJobs.filter(isApplied).length;
+  const applied = state.view === "daily" ? dailyApplied : jobs.filter(isApplied).length;
+  const notApplied = state.view === "daily" ? jobs.length : jobs.length - applied;
   const remaining = Math.max(DAILY_TARGET - applied, 0);
   const progress = Math.min((applied / DAILY_TARGET) * 100, 100);
-  const targetCopy = jobs.length > DAILY_TARGET ? `${applied} applied` : `${applied} / ${DAILY_TARGET}`;
+  const targetBaseCount = state.view === "daily" ? allDailyJobs.length : jobs.length;
+  const targetCopy = targetBaseCount > DAILY_TARGET ? `${applied} applied` : `${applied} / ${DAILY_TARGET}`;
 
   $("#dateFilter").value = state.date;
   $("#dateFilter").disabled = state.view !== "daily";
@@ -215,10 +226,10 @@ function renderDateSummary() {
     statusText = `All saved jobs: ${jobs.length} jobs, ${applied} applied, ${notApplied} not applied.`;
   } else {
     const targetNote =
-      jobs.length >= DAILY_TARGET
+      allDailyJobs.length >= DAILY_TARGET
         ? "daily target list ready"
         : `${remaining} more applied jobs to reach 50`;
-    statusText = `${formatDate(state.date)}: ${jobs.length} jobs listed, ${applied} applied, ${notApplied} not applied, ${targetNote}.`;
+    statusText = `${formatDate(state.date)}: ${allDailyJobs.length} jobs found, ${applied} applied, ${notApplied} active, ${targetNote}.`;
   }
   $("#dayStatus").textContent = statusText;
   $("#refreshStatus").textContent = `Manual web + portal search. Last search: ${formatTime(state.lastRefreshAt)}`;
@@ -226,19 +237,32 @@ function renderDateSummary() {
 
 function renderMetrics() {
   const jobs = baseJobsForView();
-  const applied = jobs.filter(isApplied).length;
-  const notApplied = jobs.length - applied;
-  const ready = jobs.filter((job) => /apply-ready|ready/i.test(job.status || "")).length;
-  const high = jobs.filter((job) => job.priority === "High").length;
-  const generated = jobs.filter((job) => job.generatedResumePath || job.generatedCoverPath).length;
-  metrics.innerHTML = [
-    [state.view === "daily" ? "Daily Jobs" : "Jobs in View", jobs.length],
-    ["Ready", ready],
-    ["High Priority", high],
-    ["Applied", applied],
-    ["Not Applied", notApplied],
-    ["Generated", generated],
-  ]
+  let metricItems;
+  if (state.view === "daily") {
+    const allDailyJobs = dailyJobs();
+    const appliedToday = allDailyJobs.filter(isApplied).length;
+    const active = activeDailyJobs();
+    metricItems = [
+      ["Daily Found", allDailyJobs.length],
+      ["Active", active.length],
+      ["Applied Today", appliedToday],
+      ["High Priority", active.filter((job) => job.priority === "High").length],
+      ["Ready", active.filter((job) => /apply-ready|ready/i.test(job.status || "")).length],
+      ["Generated", allDailyJobs.filter((job) => job.generatedResumePath || job.generatedCoverPath).length],
+    ];
+  } else {
+    const applied = jobs.filter(isApplied).length;
+    const notApplied = jobs.length - applied;
+    metricItems = [
+      ["Jobs in View", jobs.length],
+      ["Ready", jobs.filter((job) => /apply-ready|ready/i.test(job.status || "")).length],
+      ["High Priority", jobs.filter((job) => job.priority === "High").length],
+      ["Applied", applied],
+      ["Not Applied", notApplied],
+      ["Generated", jobs.filter((job) => job.generatedResumePath || job.generatedCoverPath).length],
+    ];
+  }
+  metrics.innerHTML = metricItems
     .map(([label, value]) => `<div class="metric"><strong>${value}</strong><span>${label}</span></div>`)
     .join("");
 }
@@ -402,8 +426,9 @@ async function saveDetail(id) {
 
 async function markApplied(id) {
   const { job } = await api(`/api/jobs/${encodeURIComponent(id)}/mark-applied`, { method: "POST" });
+  if (state.view === "daily") state.selectedId = null;
   replaceJob(job);
-  toast("Marked applied");
+  toast("Moved to Applied");
 }
 
 async function generate(id, kind) {
@@ -524,7 +549,12 @@ async function submitChatMessage(message) {
     const response = await api("/api/chat", { method: "POST", body: JSON.stringify({ message }) });
     removeChatMessage(pending.id);
     addChatMessage("assistant", response.reply || "Done.");
-    if (response.action === "portal_search" || response.action === "full_search") {
+    if (
+      response.action === "portal_search" ||
+      response.action === "full_search" ||
+      response.action === "company_url_search" ||
+      response.action === "jd_applied"
+    ) {
       state.lastRefreshAt = new Date().toISOString();
       await load();
     }
@@ -554,6 +584,10 @@ function setupEvents() {
     state.status = event.target.value;
     renderRows();
   });
+  $("#priorityFilter").addEventListener("change", (event) => {
+    state.priority = event.target.value;
+    renderRows();
+  });
   $("#sourceFilter").addEventListener("change", (event) => {
     state.source = event.target.value;
     renderRows();
@@ -561,37 +595,47 @@ function setupEvents() {
   $("#dateFilter").addEventListener("change", (event) => {
     state.date = event.target.value || todayString();
     state.source = "all";
+    state.priority = "all";
     state.selectedId = null;
+    $("#priorityFilter").value = "all";
     renderAll();
   });
   $("#todayBtn").onclick = () => {
     state.date = todayString();
     state.source = "all";
+    state.priority = "all";
     state.selectedId = null;
+    $("#priorityFilter").value = "all";
     renderAll();
   };
   $("#dailyViewBtn").onclick = () => {
     state.view = "daily";
     state.source = "all";
     state.status = "all";
+    state.priority = "all";
     state.selectedId = null;
     $("#statusFilter").value = "all";
+    $("#priorityFilter").value = "all";
     renderAll();
   };
   $("#appliedViewBtn").onclick = () => {
     state.view = "applied";
     state.source = "all";
     state.status = "all";
+    state.priority = "all";
     state.selectedId = null;
     $("#statusFilter").value = "all";
+    $("#priorityFilter").value = "all";
     renderAll();
   };
   $("#allJobsViewBtn").onclick = () => {
     state.view = "all";
     state.source = "all";
     state.status = "all";
+    state.priority = "all";
     state.selectedId = null;
     $("#statusFilter").value = "all";
+    $("#priorityFilter").value = "all";
     renderAll();
   };
 

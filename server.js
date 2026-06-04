@@ -49,13 +49,18 @@ const PORTAL_OPTIONS = [
   { value: "infosys", label: "Infosys Careers", tokens: ["infosys", "infosys careers", "career.infosys"] },
   { value: "dice", label: "Dice", tokens: ["dice"] },
   { value: "linkedin", label: "LinkedIn", tokens: ["linkedin", "linked in"] },
-  { value: "simplyhired", label: "SimplyHired", tokens: ["simplyhired", "simply hired"] },
   { value: "builtin", label: "BuiltIn", tokens: ["builtin", "built in"] },
   { value: "remotive", label: "Remotive", tokens: ["remotive"] },
   { value: "jobicy", label: "Jobicy", tokens: ["jobicy"] },
   { value: "himalayas", label: "Himalayas", tokens: ["himalayas"] },
   { value: "the muse", label: "The Muse", tokens: ["the muse", "muse"] },
+  { value: "wellfound", label: "Wellfound", tokens: ["wellfound", "wellfound.com"] },
+  { value: "glassdoor", label: "Glassdoor", tokens: ["glassdoor", "glassdoor.com"] },
+  { value: "college recruiter", label: "College Recruiter", tokens: ["college recruiter", "collegerecruiter", "collegerecruiter.com"] },
+  { value: "the forage", label: "The Forage", tokens: ["the forage", "forage", "theforage", "theforage.com"] },
+  { value: "wayup", label: "WayUp", tokens: ["wayup", "wayup.com"] },
   { value: "kforce", label: "Kforce", tokens: ["kforce"] },
+  { value: "vaco", label: "Vaco", tokens: ["vaco", "vaco.com"] },
   { value: "insight global", label: "Insight Global", tokens: ["insight global"] },
   { value: "tcs", label: "TCS Careers", tokens: ["tcs", "tcs careers"] },
   { value: "wipro", label: "Wipro Careers", tokens: ["wipro"] },
@@ -109,6 +114,112 @@ function wantsFullSearch(message) {
   return ["allportals", "alljobs", "fullmarket", "entireweb", "searchweb", "webportals"].some((token) => compact.includes(token));
 }
 
+function extractUrl(message) {
+  const match = String(message || "").match(/https?:\/\/[^\s"'<>]+|(?:www\.)[^\s"'<>]+/i);
+  if (!match) return "";
+  return match[0].replace(/[),.;]+$/, "");
+}
+
+function looksLikeJobDescription(message) {
+  const text = String(message || "").toLowerCase();
+  const jdSignals = [
+    "job description",
+    "responsibilities",
+    "requirements",
+    "qualifications",
+    "experience in",
+    ".net",
+    "c#",
+    "angular",
+    "developer",
+    "engineer",
+    "microservices",
+  ];
+  return text.length > 120 && jdSignals.filter((signal) => text.includes(signal)).length >= 2;
+}
+
+function firstMatch(text, patterns) {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+  return "";
+}
+
+function inferRoleFromJd(message) {
+  const text = String(message || "");
+  const explicit = firstMatch(text, [
+    /(?:job\s*title|title|role|position)\s*[:\-]\s*([^\n\r]+)/i,
+    /re\s*:\s*([^\n\r]+)/i,
+  ]);
+  if (explicit) return explicit.slice(0, 90);
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[\s\-*•\d.]+/, "").trim())
+    .filter(Boolean);
+  const roleLine = lines.find((line) => /\b(developer|engineer|architect|lead|analyst|consultant)\b/i.test(line) && line.length < 100);
+  if (roleLine) return roleLine;
+  if (/angular/i.test(text) && /\.net|c#/i.test(text)) return "Senior Full Stack .NET Developer";
+  if (/\.net|c#/i.test(text)) return ".NET Developer";
+  return "Software Developer";
+}
+
+function inferCompanyFromJd(message) {
+  const company = firstMatch(String(message || ""), [
+    /(?:company|client|organization)\s*[:\-]\s*([^\n\r]+)/i,
+    /(?:at|with)\s+([A-Z][A-Za-z0-9&.,' -]{2,60})\s+(?:is|for|as|seeks|looking)/,
+  ]);
+  return (company || "Hiring Team").replace(/[.;,]+$/, "").slice(0, 80);
+}
+
+function inferLocationFromJd(message) {
+  const location = firstMatch(String(message || ""), [
+    /(?:location|work location)\s*[:\-]\s*([^\n\r]+)/i,
+  ]);
+  return (location || "United States").slice(0, 80);
+}
+
+function jdNotes(message) {
+  return String(message || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 420);
+}
+
+async function createAppliedJobFromJd(message) {
+  const jobs = await loadJobs();
+  const job = normalizeJob({
+    id: `JOB-CHAT-${Date.now()}`,
+    company: inferCompanyFromJd(message),
+    role: inferRoleFromJd(message),
+    source: "Chat JD",
+    url: extractUrl(message),
+    location: inferLocationFromJd(message),
+    workMode: /remote/i.test(message) ? "Remote" : "Remote/Hybrid/Onsite not listed",
+    employmentType: firstMatch(message, [/(?:employment type|job type)\s*[:\-]\s*([^\n\r]+)/i]) || "Not listed",
+    pay: firstMatch(message, [/(?:pay|salary|rate)\s*[:\-]\s*([^\n\r]+)/i]) || "Not listed",
+    fitScore: 95,
+    status: "Ready to review",
+    priority: "High",
+    workAuthRisk: "Verify OPT EAD and future sponsorship/support",
+    notes: jdNotes(message),
+    jd: message,
+  });
+  jobs.unshift(job);
+  await saveJobs(jobs);
+
+  const result = await runGenerator(job, "resume");
+  const patch = {
+    status: "Applied",
+    dateApplied: today(),
+    generatedResumePath: result.resumePath || "",
+    jdPath: result.jdPath || "",
+    resumeUsedPath: result.resumePath || job.selectedResume || "",
+  };
+  const updated = await updateJob(job.id, patch);
+  return { job: updated, result };
+}
+
 function sourceSummary(result) {
   const activeSources = Object.entries(result.sourceBreakdown || {})
     .filter(([, count]) => Number(count) > 0)
@@ -128,6 +239,16 @@ function chatReply(label, result) {
     return `Searched ${label}. Added ${added} new matching jobs and skipped ${duplicates} already saved jobs. ${summary}.`;
   }
   return `Searched ${label}. No new matching jobs were added; ${duplicates} jobs were already saved or duplicates. ${summary}.`;
+}
+
+function companyUrlReply(companyUrl, result) {
+  const added = Number(result.added || 0);
+  const duplicates = Number(result.duplicatesSkipped || 0);
+  const failures = (result.failures || []).length ? ` Failures: ${(result.failures || []).slice(0, 2).join("; ")}` : "";
+  if (added > 0) {
+    return `Scanned ${companyUrl}. Added ${added} U.S. matching jobs and skipped ${duplicates} duplicates.${failures}`;
+  }
+  return `Scanned ${companyUrl}. No new U.S. matching jobs were added; ${duplicates} duplicates were skipped.${failures}`;
 }
 
 async function readBody(req) {
@@ -454,6 +575,37 @@ async function handleApi(req, res, pathname) {
   if (req.method === "POST" && pathname === "/api/chat") {
     const body = await readBody(req);
     const message = String(body.message || "").trim();
+    if (looksLikeJobDescription(message)) {
+      const { job, result } = await createAppliedJobFromJd(message);
+      await logActivity({
+        type: "chat-jd-apply",
+        jobId: job.id,
+        message: `Generated tailored resume and marked applied: ${job.company} - ${job.role}`,
+      });
+      return sendJson(res, 200, {
+        reply: `Created ${job.company} - ${job.role}, generated a tailored resume, and moved it to Applied.`,
+        action: "jd_applied",
+        job,
+        result,
+      });
+    }
+    const companyUrl = extractUrl(message);
+    if (companyUrl) {
+      const result = await runJobFinder(["--company-url", companyUrl]);
+      await logActivity({
+        type: "chat-company-url-search",
+        message: `Chat scanned company URL ${companyUrl}: ${result.added || 0} added`,
+        companyUrl,
+        added: result.added || 0,
+        duplicatesSkipped: result.duplicatesSkipped || 0,
+      });
+      return sendJson(res, 200, {
+        reply: companyUrlReply(companyUrl, result),
+        action: "company_url_search",
+        companyUrl,
+        result,
+      });
+    }
     if (wantsFullSearch(message)) {
       const result = await runJobFinder();
       await logActivity({
@@ -472,7 +624,7 @@ async function handleApi(req, res, pathname) {
     const portal = inferPortal(message);
     if (!portal) {
       return sendJson(res, 200, {
-        reply: "Pick a portal or use a quick search chip. I can search Infosys, Dice, LinkedIn, Kforce, Capgemini, Workday, Greenhouse, and more.",
+        reply: "Pick a portal or use a quick search chip. I can search Infosys, Dice, LinkedIn, Wellfound, Glassdoor, College Recruiter, The Forage, WayUp, Kforce, Vaco, Insight Global, Capgemini, Workday, Greenhouse, and more.",
         action: "need_portal",
       });
     }
