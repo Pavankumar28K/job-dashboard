@@ -211,14 +211,13 @@ def make_cover(job):
             f"The role aligns closely with my background in {', '.join(keywords[:7]) if keywords else 'full-stack .NET development, Azure cloud delivery, APIs, Angular, SQL Server, and CI/CD'}."
         ),
         (
-            "Across CUNY, NYC Department of Education, Tata Consultancy Services, and Zensar Technologies, I have delivered enterprise "
-            "applications using C#, .NET Core, ASP.NET MVC/Web API, Angular, SQL Server, Entity Framework Core, OAuth2/JWT, Azure services, "
-            "Azure DevOps, Terraform, Docker, Splunk, and App Insights. My work includes secure API design, responsive UI development, "
-            "data integration, SQL optimization, cloud deployment, monitoring, and Agile collaboration."
+            f"Across Illumina, Virginia Tech, and Tata Consultancy Services, I have delivered enterprise applications using "
+            f"C#, .NET Core 8, ASP.NET MVC/Web API, Angular 18, SQL Server, Entity Framework Core, JWT/OAuth2, Azure OpenAI, "
+            f"Azure DevOps, Docker/AKS, Kafka, and Application Insights. My work spans secure API design, Angular SPA development, "
+            f"AI/RAG integration, SQL optimization, cloud-native deployments, and Agile collaboration."
         ),
         (
-            "I am currently authorized to work in the United States on F-1 OPT EAD and am open to remote, hybrid, or onsite work depending "
-            "on the role and contract terms."
+            "I am currently authorized to work in the United States and am open to remote, hybrid, or onsite opportunities."
         ),
         f"Sincerely,\n{candidate_name()}",
     ]

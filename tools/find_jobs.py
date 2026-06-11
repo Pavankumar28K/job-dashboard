@@ -17,6 +17,30 @@ from xml.etree import ElementTree as ET
 APP_DIR = Path(__file__).resolve().parents[1]
 
 
+def load_app_config():
+    config_path = APP_DIR / "config.json"
+    defaults = {
+        "jobTitles": ["Software Engineer", ".NET Developer", "Full Stack Developer", "Backend Developer"],
+        "mustHaveSkills": ["C#", ".NET", "ASP.NET", "Azure"],
+        "niceToHaveSkills": ["Angular", "React", "SQL", "Docker", "TypeScript", "REST API", "Microservices"],
+        "remoteBoost": True,
+        "dailyTarget": 50,
+        "priorityThresholds": {"high": 80, "medium": 68},
+        "minFitScore": 62,
+    }
+    if config_path.exists():
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                user = json.load(f)
+            return {**defaults, **user}
+        except Exception:
+            pass
+    return defaults
+
+
+APP_CONFIG = load_app_config()
+
+
 def configured_path(env_name, fallback):
     return Path(os.environ.get(env_name, fallback)).expanduser().resolve()
 
@@ -27,6 +51,7 @@ DASHBOARD_JOBS = configured_path("DASHBOARD_JOBS", APP_DIR / "data" / "jobs.json
 LOG_DIR = APP_DIR / "logs"
 LOG_PATH = LOG_DIR / "job_finder.log"
 LOCK_PATH = LOG_DIR / "job_finder.lock"
+LAST_REFRESH_PATH = LOG_DIR / "last_refresh.txt"
 
 HEADERS = [
     "ID",
@@ -55,6 +80,12 @@ QUERIES = [
     "Senior .NET Developer Remote",
     "Full Stack .NET React Azure",
     ".NET Azure OpenAI Developer",
+    "Software Engineer .NET C# Azure",
+    "Software Developer Full Stack Remote",
+    "Full Stack Engineer React Node.js",
+    "Backend Engineer API Microservices Remote",
+    "Senior Software Engineer Azure Cloud",
+    "Full Stack Software Developer JavaScript TypeScript",
 ]
 
 USER_AGENT = (
@@ -62,7 +93,7 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
 )
 RECENT_DAYS = 14
-MAX_SOURCE_WORKERS = 8
+MAX_SOURCE_WORKERS = 20
 USER_EXPERIENCE_YEARS = 6
 MAX_ACCEPTABLE_REQUIRED_YEARS = 7
 INFOSYS_CAREER_API = "https://intapgateway.infosysapps.com/careersci/search/intapjbsrch/getCareerSearchJobs"
@@ -235,40 +266,46 @@ NON_US_LOCATION_TERMS = {
     "worldwide",
 }
 
+# Each entry: (source_name, (query1, query2, ...), (domain1, ...))
+# Build Bing RSS queries dynamically from config jobTitles (up to 3 per source)
+def _build_queries(url_prefix):
+    titles = APP_CONFIG.get("jobTitles", ["Software Engineer"])[:3]
+    return tuple(f"site:{url_prefix} {title}" for title in titles)
+
+
 BING_RSS_SOURCES = [
-    ("Wellfound", 'site:wellfound.com/jobs ".NET" developer United States', ("wellfound.com",)),
-    ("Glassdoor", 'site:glassdoor.com/job ".NET" developer United States', ("glassdoor.com",)),
-    ("College Recruiter", 'site:collegerecruiter.com/job ".NET" developer United States', ("collegerecruiter.com",)),
-    ("The Forage", 'site:theforage.com/jobs ".NET" developer United States', ("theforage.com",)),
-    ("WayUp", 'site:wayup.com/jobs ".NET" developer United States', ("wayup.com",)),
-    ("Kforce", 'site:kforce.com/jobs ".NET" Azure developer United States', ("kforce.com",)),
-    ("Vaco", 'site:vaco.com/jobs ".NET" developer United States', ("vaco.com",)),
-    ("Insight Global", 'site:insightglobal.com/jobs ".NET" Azure developer United States', ("insightglobal.com",)),
-    ("TCS Careers", 'site:tcs.com/careers ".NET" Azure developer United States', ("tcs.com",)),
-    ("Infosys Careers", 'site:career.infosys.com ".NET" Azure developer', ("infosys.com", "infosysapps.com")),
-    ("Wipro Careers", 'site:wipro.com/careers ".NET" Azure developer United States', ("wipro.com",)),
-    ("Capgemini Careers", 'site:capgemini.com/careers ".NET" Azure developer United States', ("capgemini.com",)),
-    ("TEKsystems", 'site:teksystems.com ".NET" Azure developer jobs', ("teksystems.com",)),
-    ("Akkodis", 'site:akkodis.com ".NET" Azure developer jobs', ("akkodis.com",)),
-    ("Robert Half", 'site:roberthalf.com/us/en/jobs ".NET" Azure developer', ("roberthalf.com",)),
-    ("Randstad", 'site:randstadusa.com/jobs ".NET" Azure developer', ("randstadusa.com",)),
-    ("Apex Systems", 'site:apexsystems.com/job ".NET" Azure developer', ("apexsystems.com",)),
-    ("Collabera", 'site:collabera.com ".NET" Azure developer jobs', ("collabera.com",)),
-    ("Motion Recruitment", 'site:motionrecruitment.com/tech-jobs ".NET" Azure developer', ("motionrecruitment.com",)),
-    ("The Judge Group", 'site:judge.com/jobs ".NET" Azure developer', ("judge.com",)),
-    ("Experis", 'site:experis.com ".NET" Azure developer jobs', ("experis.com",)),
-    ("Greenhouse", 'site:boards.greenhouse.io ".NET" Azure developer United States', ("boards.greenhouse.io",)),
-    ("Lever", 'site:jobs.lever.co ".NET" Azure developer United States', ("jobs.lever.co",)),
-    ("Workday", 'site:myworkdayjobs.com ".NET" Azure developer United States', ("myworkdayjobs.com",)),
-    ("SmartRecruiters", 'site:careers.smartrecruiters.com ".NET" Azure developer United States', ("smartrecruiters.com",)),
-    ("Ashby", 'site:jobs.ashbyhq.com ".NET" Azure developer United States', ("jobs.ashbyhq.com",)),
-    ("iCIMS", 'site:icims.com/jobs ".NET" Azure developer United States', ("icims.com",)),
+    # ATS platforms — server-rendered, well-indexed by Bing
+    ("Greenhouse",         _build_queries("boards.greenhouse.io"),          ("boards.greenhouse.io",)),
+    ("Lever",              _build_queries("jobs.lever.co"),                 ("jobs.lever.co",)),
+    ("SmartRecruiters",    _build_queries("careers.smartrecruiters.com"),   ("smartrecruiters.com",)),
+    ("Ashby",              _build_queries("jobs.ashbyhq.com"),              ("jobs.ashbyhq.com",)),
+    ("Workday",            _build_queries("myworkdayjobs.com"),             ("myworkdayjobs.com",)),
+    ("Glassdoor",          _build_queries("glassdoor.com/job-listing"),     ("glassdoor.com",)),
+    ("Wellfound",          _build_queries("wellfound.com/jobs"),            ("wellfound.com",)),
+    # Staffing agencies
+    ("Kforce",             _build_queries("kforce.com"),                    ("kforce.com",)),
+    ("TEKsystems",         _build_queries("teksystems.com"),                ("teksystems.com",)),
+    ("Robert Half",        _build_queries("roberthalf.com"),                ("roberthalf.com",)),
+    ("Insight Global",     _build_queries("insightglobal.com"),             ("insightglobal.com",)),
+    ("Vaco",               _build_queries("vaco.com"),                      ("vaco.com",)),
+    ("Akkodis",            _build_queries("akkodis.com"),                   ("akkodis.com",)),
+    ("Randstad",           _build_queries("randstadusa.com"),               ("randstadusa.com",)),
+    ("Apex Systems",       _build_queries("apexsystems.com"),               ("apexsystems.com",)),
+    ("Collabera",          _build_queries("collabera.com"),                 ("collabera.com",)),
+    ("Motion Recruitment", _build_queries("motionrecruitment.com"),         ("motionrecruitment.com",)),
+    ("The Judge Group",    _build_queries("judge.com"),                     ("judge.com",)),
+    ("Experis",            _build_queries("experis.com"),                   ("experis.com",)),
+    ("iCIMS",              _build_queries("icims.com"),                     ("icims.com",)),
+    # Indeed via Bing (direct scrape is blocked by Indeed)
+    ("Indeed",             _build_queries("indeed.com/viewjob"),            ("indeed.com",)),
 ]
 
 PORTAL_ALIASES = {
     "dice": ("Dice",),
     "linkedin": ("LinkedIn",),
     "linked in": ("LinkedIn",),
+    "indeed": ("Indeed",),
+    "indeed.com": ("Indeed",),
     "builtin": ("BuiltIn",),
     "built in": ("BuiltIn",),
     "remotive": ("Remotive",),
@@ -312,6 +349,23 @@ def today():
     return datetime.now().strftime("%Y-%m-%d")
 
 
+def days_since_last_refresh():
+    """Return how many days since the last successful refresh (max 14, min 1)."""
+    if not LAST_REFRESH_PATH.exists():
+        return 14
+    try:
+        last = datetime.fromisoformat(LAST_REFRESH_PATH.read_text(encoding="utf-8").strip())
+        delta = (datetime.now() - last).total_seconds() / 86400
+        return max(1, min(14, int(delta) + 1))
+    except Exception:
+        return 14
+
+
+def save_last_refresh():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    LAST_REFRESH_PATH.write_text(datetime.now().isoformat(), encoding="utf-8")
+
+
 def log(message):
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     line = f"{datetime.now().isoformat(timespec='seconds')} {message}"
@@ -319,7 +373,7 @@ def log(message):
         handle.write(line + "\n")
 
 
-def fetch(url, timeout=12):
+def fetch(url, timeout=15, retries=2):
     request = Request(
         url,
         headers={
@@ -330,8 +384,16 @@ def fetch(url, timeout=12):
             "Referer": "https://career.infosys.com/joblist",
         },
     )
-    with urlopen(request, timeout=timeout) as response:
-        return response.read().decode("utf-8", errors="ignore")
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                return response.read().decode("utf-8", errors="ignore")
+        except Exception as exc:
+            last_error = exc
+            if attempt < retries:
+                time.sleep(1.5 * (attempt + 1))
+    raise last_error
 
 
 def clean_text(value):
@@ -346,7 +408,8 @@ def normalized_source_key(value):
 
 def source_catalog():
     direct = ["Dice", "LinkedIn", "BuiltIn", "Remotive", "Jobicy", "Himalayas", "The Muse", "Infosys Careers"]
-    return direct + [source for source, _query, _domains in BING_RSS_SOURCES]
+    bing_sources = list(dict.fromkeys(source for source, _queries, _domains in BING_RSS_SOURCES))
+    return direct + bing_sources
 
 
 def selected_sources_for_portal(portal):
@@ -534,6 +597,13 @@ def is_us_location(location, summary=""):
     location_text = clean_text(location).lower()
     if not location_text:
         return True
+    # Explicitly remote / worldwide with no country restriction → allow through
+    if re.search(r"\b(remote|worldwide|anywhere|global)\b", location_text):
+        # Still block if summary explicitly says non-US
+        summary_text = clean_text(summary).lower()
+        if any(re.search(rf"\b{re.escape(term)}\b", summary_text) for term in NON_US_LOCATION_TERMS):
+            return False
+        return True
     normalized = re.sub(r"[^a-z0-9.]+", " ", location_text)
     tokens = set(re.findall(r"\b[a-z]{2}\b", normalized))
     if any(re.search(rf"\b{re.escape(term)}\b", normalized) for term in US_LOCATION_TERMS):
@@ -544,11 +614,11 @@ def is_us_location(location, summary=""):
         return True
     if any(re.search(rf"\b{re.escape(term)}\b", normalized) for term in NON_US_LOCATION_TERMS):
         return False
-
     summary_text = clean_text(summary).lower()
     if re.search(r"\b(united states|usa|u\.s\.|us only|within the us|within u\.s\.)\b", summary_text):
         return True
-    return False
+    # Ambiguous location — allow through rather than silently dropping
+    return True
 
 
 def pay_too_low(pay):
@@ -565,33 +635,40 @@ def pay_too_low(pay):
 
 
 def score_job(title, summary, company="", pay="", work_mode=""):
+    """Score a job based on user-configured skills and job titles from config.json."""
     text = f"{title} {summary} {company} {work_mode}".lower()
     score = 42
-    if re.search(r"\b(\.net|dotnet|c#|asp\.net|net core)\b", text):
-        score += 24
-    if "full stack" in text or "full-stack" in text or "fullstack" in text:
-        score += 12
-    if "azure" in text:
-        score += 10
-    if "angular" in text:
-        score += 8
-    if "react" in text:
-        score += 5
-    if "api" in text or "rest" in text or "microservice" in text:
-        score += 6
-    if "sql" in text:
-        score += 5
-    if "devops" in text or "ci/cd" in text:
+
+    must_have = [s.lower() for s in APP_CONFIG.get("mustHaveSkills", [])]
+    nice_to_have = [s.lower() for s in APP_CONFIG.get("niceToHaveSkills", [])]
+    job_titles = [t.lower() for t in APP_CONFIG.get("jobTitles", [])]
+    remote_boost = APP_CONFIG.get("remoteBoost", True)
+
+    # Must-have skills: +20 each, capped at +40
+    must_hits = sum(1 for skill in must_have if skill in text)
+    score += min(must_hits * 20, 40)
+
+    # Nice-to-have skills: +6 each, capped at +24
+    nice_hits = sum(1 for skill in nice_to_have if skill in text)
+    score += min(nice_hits * 6, 24)
+
+    # Job title keyword matches: +10 each, capped at +20
+    title_hits = sum(1 for jt in job_titles if jt in text)
+    score += min(title_hits * 10, 20)
+
+    # Remote boost
+    if remote_boost and ("remote" in text or "remote" in work_mode.lower()):
         score += 4
-    if re.search(r"\b(ai|openai|genai|rag|machine learning|ml)\b", text):
-        score += 7
-    if "remote" in text or "remote" in work_mode.lower():
-        score += 4
+
+    # Pay present and not too low
     if pay and not pay_too_low(pay):
         score += 2
-    if not re.search(r"\b(\.net|dotnet|c#|asp\.net|net core)\b", text):
-        score -= 18
-    return max(0, min(95, score))
+
+    # Penalty: no must-have skills AND no job title match
+    if must_hits == 0 and title_hits == 0:
+        score -= 14
+
+    return max(0, min(99, score))
 
 
 def selected_resume(title, summary):
@@ -606,9 +683,12 @@ def selected_resume(title, summary):
 def priority(score, status):
     if "Blocked" in status:
         return "Low"
-    if score >= 80:
+    thresholds = APP_CONFIG.get("priorityThresholds", {})
+    high_thresh = thresholds.get("high", 80)
+    medium_thresh = thresholds.get("medium", 68)
+    if score >= high_thresh:
         return "High"
-    if score >= 68:
+    if score >= medium_thresh:
         return "Medium"
     return "Low"
 
@@ -628,7 +708,8 @@ def build_row(source, url, title, company, location, posted, employment, pay, su
     if required_years > MAX_ACCEPTABLE_REQUIRED_YEARS:
         return None, f"requires_{required_years}_years"
     score = score_job(title, summary, company, pay, work_mode)
-    if score < 62:
+    min_score = APP_CONFIG.get("minFitScore", 62)
+    if score < min_score:
         return None, "low_fit"
     if has_hard_block(blob):
         return None, "hard_block"
@@ -797,7 +878,7 @@ def parse_linkedin(text):
 
 
 def simplyhired_search_urls():
-    for query in QUERIES[:4]:
+    for query in QUERIES[:8]:
         encoded = quote_plus(query)
         yield f"https://www.simplyhired.com/search?q={encoded}&l=United+States"
 
@@ -840,7 +921,10 @@ def parse_simplyhired(text):
 
 
 def builtin_search_urls():
-    queries = [".NET Azure", "C# Azure", ".NET Full Stack", "Azure AI .NET"]
+    queries = [
+        ".NET Azure", "C# Azure", ".NET Full Stack", "Azure AI .NET",
+        "Software Engineer", "Full Stack Engineer", "Backend Engineer", "Software Developer",
+    ]
     for query in queries:
         encoded = quote_plus(query)
         yield (
@@ -919,16 +1003,49 @@ def bing_rss_url(query):
     return f"https://www.bing.com/search?format=rss&q={quote_plus(query)}"
 
 
+def extract_bing_redirect(raw_link):
+    """Bing RSS wraps target URLs in a redirect like bing.com/cr?...&url=<encoded>. Unwrap it."""
+    if not raw_link:
+        return raw_link
+    # Try query param ?url= or &url=
+    m = re.search(r'[?&]url=([^&]+)', raw_link)
+    if m:
+        return unquote(m.group(1))
+    # Try r= param (another Bing redirect format)
+    m = re.search(r'[?&]r=([^&]+)', raw_link)
+    if m:
+        return unquote(m.group(1))
+    return raw_link
+
+
 def parse_bing_rss(text, source, allowed_domains):
     jobs = []
-    root = ET.fromstring(text)
-    for item in root.findall(".//item"):
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        log(f"[{source}] Bing RSS XML parse error")
+        return jobs
+    items = root.findall(".//item")
+    domain_misses = 0
+    score_drops = 0
+    for item in items:
         title = clean_text(item.findtext("title", ""))
-        link = clean_text(item.findtext("link", ""))
+        raw_link = clean_text(item.findtext("link", ""))
         description = clean_text(item.findtext("description", ""))
+        # Unwrap Bing redirect to get the real URL
+        link = extract_bing_redirect(raw_link)
         host = urlsplit(link).netloc.lower()
-        if not link or "bing.com" in host or not any(domain in host for domain in allowed_domains):
-            continue
+        if not link or not any(domain in host for domain in allowed_domains):
+            # Also try to find the target domain URL inside the description
+            for domain in allowed_domains:
+                dm = re.search(rf'https?://[^\s"<>]*{re.escape(domain)}[^\s"<>]*', description)
+                if dm:
+                    link = dm.group(0)
+                    host = urlsplit(link).netloc.lower()
+                    break
+            else:
+                domain_misses += 1
+                continue
         summary = f"{description} Career portal search result; verify posted date before applying."
         row, reason = build_row(
             source,
@@ -944,6 +1061,10 @@ def parse_bing_rss(text, source, allowed_domains):
         )
         if row:
             jobs.append(row)
+        elif reason and reason.startswith("score_"):
+            score_drops += 1
+    if not jobs and items:
+        log(f"[{source}] {len(items)} RSS items: {domain_misses} domain-mismatch, {score_drops} low-score, 0 kept")
     return jobs
 
 
@@ -1333,9 +1454,149 @@ def source_requests(selected_sources=None):
     if allowed("Infosys Careers"):
         for url in infosys_search_urls():
             yield "Infosys Careers", url, parse_infosys
-    for source, query, allowed_domains in BING_RSS_SOURCES:
+    for source, queries, allowed_domains in BING_RSS_SOURCES:
         if allowed(source):
-            yield source, bing_rss_url(query), lambda text, source=source, allowed_domains=allowed_domains: parse_bing_rss(text, source, allowed_domains)
+            if isinstance(queries, str):
+                queries = (queries,)
+            for query in queries:
+                yield source, bing_rss_url(query), lambda text, source=source, allowed_domains=allowed_domains: parse_bing_rss(text, source, allowed_domains)
+
+
+# ─── Indeed (browser-like headers to reduce bot blocking) ───────────────────
+
+def fetch_indeed_page(url, timeout=20):
+    """Fetch an Indeed page with Chrome-like headers."""
+    req = Request(url, headers={
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/125.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.google.com/",
+        "Upgrade-Insecure-Requests": "1",
+    })
+    last_error = None
+    for attempt in range(3):
+        try:
+            with urlopen(req, timeout=timeout) as response:
+                return response.read().decode("utf-8", errors="ignore")
+        except Exception as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+    raise last_error
+
+
+def _extract_json_at(text, pattern):
+    """Extract the JSON object/array that starts immediately after a regex pattern."""
+    m = re.search(pattern, text)
+    if not m:
+        return None
+    pos = m.end()
+    while pos < len(text) and text[pos] in " \t\n\r":
+        pos += 1
+    if pos >= len(text) or text[pos] not in "{[":
+        return None
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text, pos)
+        return obj
+    except json.JSONDecodeError:
+        return None
+
+
+def _parse_indeed_job_item(jk, item, jobs):
+    """Convert a single Indeed job dict into a dashboard row."""
+    title = clean_text(item.get("displayTitle") or item.get("title") or "")
+    company = clean_text(item.get("companyName") or item.get("company") or "")
+    location = clean_text(item.get("formattedLocation") or item.get("location") or "United States")
+    snippet = clean_text(item.get("snippet") or item.get("jobSnippet") or "")
+
+    # Employment type
+    job_types = item.get("jobTypes") or []
+    employment = job_types[0] if isinstance(job_types, list) and job_types else "Full-time"
+
+    # Work mode
+    remote_locs = item.get("remoteLocations") or []
+    work_mode = "Remote" if remote_locs else "Hybrid/Onsite not listed"
+
+    # Pay
+    pay = "Not listed"
+    salary = item.get("extractedSalary") or {}
+    if isinstance(salary, dict) and salary:
+        pay_min = salary.get("min")
+        pay_max = salary.get("max")
+        pay_type = str(salary.get("type", "")).lower()
+        suffix = "/yr" if "year" in pay_type else ("/hr" if "hour" in pay_type else "")
+        if pay_min and pay_max:
+            pay = f"${int(pay_min):,}–${int(pay_max):,}{suffix}"
+        elif pay_min:
+            pay = f"${int(pay_min):,}+{suffix}"
+
+    # Posted date (pubDate is Unix ms)
+    posted = date_from_epoch_ms(item.get("pubDate") or item.get("datePosted")) or "Indeed recent"
+    if not is_recent_posted(posted):
+        return
+
+    url = f"https://www.indeed.com/viewjob?jk={jk}" if jk else ""
+    if not url:
+        return
+
+    row, _ = build_row("Indeed", url, title, company, location, posted, employment, pay, snippet, work_mode)
+    if row:
+        jobs.append(row)
+
+
+def parse_indeed(text):
+    """Parse an Indeed search results page (tries mosaic-provider-jobcards then __NEXT_DATA__)."""
+    jobs = []
+    if not text or len(text) < 500:
+        return jobs
+    if "Just a moment" in text or "cf-browser-verification" in text:
+        log("[Indeed] Cloudflare block detected — skipping")
+        return jobs
+
+    # Path 1: window.mosaic.providerData["mosaic-provider-jobcards"]
+    mosaic = _extract_json_at(
+        text,
+        r'window\.mosaic\.providerData\["mosaic-provider-jobcards"\]\s*=\s*'
+    )
+    if mosaic:
+        results = (
+            mosaic.get("metaData", {})
+                  .get("mosaicProviderJobCardsModel", {})
+                  .get("results", [])
+        )
+        for item in results:
+            _parse_indeed_job_item(item.get("jobkey", ""), item, jobs)
+        if jobs:
+            return jobs
+
+    # Path 2: __NEXT_DATA__ → jobKeysWithInfo or results
+    nd = _extract_json_at(text, r'<script id="__NEXT_DATA__" type="application/json">')
+    if nd:
+        pp = nd.get("props", {}).get("pageProps", {})
+        jkwi = pp.get("jobKeysWithInfo", {})
+        if jkwi:
+            for jk, wrapper in jkwi.items():
+                info = wrapper.get("job", wrapper) if isinstance(wrapper, dict) else {}
+                _parse_indeed_job_item(jk, info, jobs)
+        if not jobs:
+            for item in pp.get("results", []):
+                jk = item.get("jobkey") or item.get("jk") or ""
+                _parse_indeed_job_item(jk, item, jobs)
+
+    return jobs
+
+
+def indeed_search_urls():
+    for query in QUERIES[:6]:
+        encoded = quote_plus(query)
+        yield (
+            f"https://www.indeed.com/jobs"
+            f"?q={encoded}&l=United+States&sort=date&fromage=14&limit=25"
+        )
 
 
 def collect_candidates(selected_sources=None):
@@ -1422,6 +1683,11 @@ def main():
     parser.add_argument("--company-url", default="", help="Optional company careers or website URL to scan for jobs")
     args = parser.parse_args()
     selected_sources = selected_sources_for_portal(args.portal)
+    # When doing a full search (no --portal flag), apply config-based source filter
+    if not args.portal:
+        enabled = APP_CONFIG.get("enabledSources")
+        if enabled:
+            selected_sources = set(enabled)
     started = time.time()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     if args.portal and not selected_sources:
@@ -1442,7 +1708,7 @@ def main():
         }
         print(json.dumps(summary, indent=2))
         return
-    if LOCK_PATH.exists() and time.time() - LOCK_PATH.stat().st_mtime < 15 * 60:
+    if LOCK_PATH.exists() and time.time() - LOCK_PATH.stat().st_mtime < 3 * 60:
       summary = {
           "date": today(),
           "portal": args.portal,
@@ -1462,6 +1728,8 @@ def main():
       return
     LOCK_PATH.write_text(str(datetime.now().isoformat()), encoding="utf-8")
     try:
+        global RECENT_DAYS
+        RECENT_DAYS = days_since_last_refresh()
         date_value = today()
         rows = load_csv()
         id_gen = next_id(rows, date_value)
@@ -1506,6 +1774,7 @@ def main():
             "seconds": round(time.time() - started, 2),
             "csv": str(CSV_PATH),
         }
+        save_last_refresh()
         log(json.dumps(summary))
         print(json.dumps(summary, indent=2))
     finally:
@@ -1516,6 +1785,11 @@ def main():
 
 
 if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:
+        log(f"ERROR {exc}")
+        raise
     try:
         main()
     except Exception as exc:

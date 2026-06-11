@@ -13,6 +13,7 @@ const DATA_DIR = path.join(ROOT, "data");
 const JOBS_PATH = path.join(DATA_DIR, "jobs.json");
 const ACTIVITY_PATH = path.join(DATA_DIR, "activity.json");
 const CONFIG_PATH = path.join(ROOT, "config.local.json");
+const APP_SETTINGS_PATH = path.join(ROOT, "config.json");
 
 function readConfig() {
   if (!fs.existsSync(CONFIG_PATH)) return {};
@@ -49,6 +50,7 @@ const PORTAL_OPTIONS = [
   { value: "infosys", label: "Infosys Careers", tokens: ["infosys", "infosys careers", "career.infosys"] },
   { value: "dice", label: "Dice", tokens: ["dice"] },
   { value: "linkedin", label: "LinkedIn", tokens: ["linkedin", "linked in"] },
+  { value: "indeed", label: "Indeed", tokens: ["indeed", "indeed.com"] },
   { value: "builtin", label: "BuiltIn", tokens: ["builtin", "built in"] },
   { value: "remotive", label: "Remotive", tokens: ["remotive"] },
   { value: "jobicy", label: "Jobicy", tokens: ["jobicy"] },
@@ -81,6 +83,10 @@ const PORTAL_OPTIONS = [
   { value: "ashby", label: "Ashby", tokens: ["ashby"] },
   { value: "icims", label: "iCIMS", tokens: ["icims"] },
 ];
+
+let autoRefreshAt = null;
+let autoRefreshAdded = 0;
+
 
 function today() {
   const now = new Date();
@@ -276,7 +282,26 @@ async function loadJobs() {
 
 async function saveJobs(jobs) {
   await fsp.mkdir(DATA_DIR, { recursive: true });
-  await fsp.writeFile(JOBS_PATH, JSON.stringify(jobs, null, 2), "utf8");
+  const serialized = JSON.stringify(jobs, null, 2);
+  // Atomic write: write to temp file first, then rename — prevents corruption
+  const tmp = JOBS_PATH + ".tmp";
+  await fsp.writeFile(tmp, serialized, "utf8");
+  // Verify the temp file is valid before replacing
+  const verify = await fsp.readFile(tmp, "utf8");
+  JSON.parse(verify); // throws if corrupted — keeps old file intact
+  // Backup (keep last 5)
+  if (fs.existsSync(JOBS_PATH)) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    await fsp.copyFile(JOBS_PATH, path.join(DATA_DIR, `jobs.bak.${stamp}.json`));
+    const backups = (await fsp.readdir(DATA_DIR))
+      .filter(n => n.startsWith("jobs.bak.") && n.endsWith(".json"))
+      .sort();
+    for (const old of backups.slice(0, -5))
+      await fsp.unlink(path.join(DATA_DIR, old)).catch(() => {});
+  }
+  // Write verified content directly with explicit truncation (avoids null-byte padding from rename)
+  await fsp.writeFile(JOBS_PATH, verify, { encoding: "utf8", flag: "w" });
+  await fsp.unlink(tmp).catch(() => {});
 }
 
 async function logActivity(event) {
@@ -382,6 +407,12 @@ function normalizeJob(job) {
     generatedCoverPath: job.generatedCoverPath || "",
     resumeUsedPath: job.resumeUsedPath || (isAppliedStatus(status) ? generatedResumePath || selectedResume : ""),
     dateApplied: job.dateApplied || "",
+    recruiterName: job.recruiterName || "",
+    recruiterEmail: job.recruiterEmail || "",
+    recruiterPhone: job.recruiterPhone || "",
+    interviewDate: job.interviewDate || "",
+    followUpDate: job.followUpDate || "",
+    pipelineStage: job.pipelineStage || "",
   };
 }
 
@@ -508,14 +539,24 @@ function runJobFinder(args = []) {
     });
     let stdout = "";
     let stderr = "";
+    // Kill the process if it runs longer than 3 minutes
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("Job finder timed out after 3 minutes"));
+    }, 3 * 60 * 1000);
     child.stdout.on("data", (chunk) => (stdout += chunk));
     child.stderr.on("data", (chunk) => (stderr += chunk));
     child.on("close", (code) => {
+      clearTimeout(timeout);
       if (code !== 0) {
         reject(new Error(stderr || stdout || `Finder exited with ${code}`));
       } else {
         try {
-          resolve(JSON.parse(stdout));
+          // Script may print multiple JSON objects if called twice; use the last one
+          const trimmed = stdout.trim();
+          const lastBrace = trimmed.lastIndexOf("\n{");
+          const jsonStr = lastBrace >= 0 ? trimmed.slice(lastBrace + 1) : trimmed;
+          resolve(JSON.parse(jsonStr));
         } catch {
           reject(new Error(`Finder returned invalid JSON: ${stdout}`));
         }
@@ -644,6 +685,72 @@ async function handleApi(req, res, pathname) {
     });
   }
 
+  if (req.method === "GET" && pathname === "/api/auto-refresh-status") {
+    return sendJson(res, 200, { at: autoRefreshAt, added: autoRefreshAdded });
+  }
+
+  if (req.method === "GET" && pathname === "/api/app-config") {
+    const ALL_SOURCES = [
+      "Dice", "LinkedIn", "BuiltIn", "Remotive", "Jobicy", "Himalayas", "The Muse", "Infosys Careers",
+      "Greenhouse", "Lever", "SmartRecruiters", "Ashby", "Workday", "Glassdoor", "Wellfound",
+      "Kforce", "TEKsystems", "Robert Half", "Insight Global", "Vaco", "Akkodis", "Randstad",
+      "Apex Systems", "Collabera", "Motion Recruitment", "The Judge Group", "Experis", "iCIMS", "Indeed",
+    ];
+    const defaults = {
+      jobTitles: ["Software Engineer", ".NET Developer", "Full Stack Developer", "Backend Developer", "C# Developer"],
+      mustHaveSkills: ["C#", ".NET", "ASP.NET", "Azure"],
+      niceToHaveSkills: ["Angular", "React", "SQL", "Docker", "TypeScript", "Azure DevOps", "REST API", "Microservices"],
+      remoteBoost: true,
+      dailyTarget: 50,
+      priorityThresholds: { high: 80, medium: 68 },
+      minFitScore: 62,
+      enabledSources: ALL_SOURCES,
+    };
+    try {
+      const raw = fs.existsSync(APP_SETTINGS_PATH) ? JSON.parse(fs.readFileSync(APP_SETTINGS_PATH, "utf8")) : {};
+      return sendJson(res, 200, { ...defaults, ...raw });
+    } catch {
+      return sendJson(res, 200, defaults);
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/api/app-config") {
+    const body = await readBody(req);
+    const serialised = JSON.stringify(body, null, 2);
+    // Verify before writing (prevents corrupt config on bad payloads)
+    JSON.parse(serialised);
+    const tmp = APP_SETTINGS_PATH + ".tmp";
+    await fsp.writeFile(tmp, serialised, { encoding: "utf8" });
+    await fsp.writeFile(APP_SETTINGS_PATH, serialised, { encoding: "utf8", flag: "w" });
+    await fsp.unlink(tmp).catch(() => {});
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (req.method === "POST" && pathname === "/api/jobs/bulk") {
+    const body = await readBody(req);
+    const { action, ids } = body;
+    if (!Array.isArray(ids) || !ids.length) return sendJson(res, 400, { error: "ids required" });
+    const jobs = await loadJobs();
+    let count = 0;
+    if (action === "delete") {
+      const idSet = new Set(ids);
+      const before = jobs.length;
+      const remaining = jobs.filter((j) => !idSet.has(j.id));
+      count = before - remaining.length;
+      await saveJobs(remaining);
+    } else if (action === "mark-applied") {
+      for (const job of jobs) {
+        if (ids.includes(job.id) && !isAppliedStatus(job.status)) {
+          Object.assign(job, normalizeJob({ ...job, status: "Applied", dateApplied: job.dateApplied || today() }));
+          count++;
+        }
+      }
+      await saveJobs(jobs);
+    }
+    await logActivity({ type: `bulk-${action}`, message: `Bulk ${action}: ${count} jobs` });
+    return sendJson(res, 200, { ok: true, count });
+  }
+
   if (req.method === "POST" && pathname === "/api/jobs") {
     const body = await readBody(req);
     const jobs = await loadJobs();
@@ -659,6 +766,16 @@ async function handleApi(req, res, pathname) {
 
   const id = decodeURIComponent(match[1]);
   const action = match[2];
+  if (req.method === "DELETE" && !action) {
+    const jobs = await loadJobs();
+    const index = jobs.findIndex((item) => item.id === id);
+    if (index < 0) return notFound(res);
+    const [removed] = jobs.splice(index, 1);
+    await saveJobs(jobs);
+    await logActivity({ type: "delete", jobId: id, message: `Deleted ${removed.company} - ${removed.role}` });
+    return sendJson(res, 200, { ok: true });
+  }
+
   if (req.method === "PATCH" && !action) {
     const body = await readBody(req);
     const job = await updateJob(id, body);
@@ -726,8 +843,24 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+function scheduleAutoRefresh() {
+  setInterval(async () => {
+    try {
+      const result = await runJobFinder();
+      autoRefreshAt = new Date().toISOString();
+      autoRefreshAdded = result.added || 0;
+      console.log(`Auto-refresh: ${autoRefreshAdded} new jobs added`);
+    } catch (error) {
+      console.error("Auto-refresh failed:", error.message);
+    }
+  }, 60 * 60 * 1000); // every 1 hour
+}
+
 ensureData()
-  .then(() => server.listen(PORT, "127.0.0.1", () => console.log(`Job dashboard running at http://127.0.0.1:${PORT}`)))
+  .then(() => {
+    server.listen(PORT, "127.0.0.1", () => console.log(`Job dashboard running at http://127.0.0.1:${PORT}`));
+    scheduleAutoRefresh();
+  })
   .catch((error) => {
     console.error(error);
     process.exit(1);

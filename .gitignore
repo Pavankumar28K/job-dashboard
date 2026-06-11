@@ -9,3 +9,14 @@ __pycache__/
 node_modules/
 .env
 .DS_Store
+config.json
+resumes/*.docx
+data/*.bak*
+diagnose.bat
+create_shortcut.vbs
+
+config.json
+resumes/*.docx
+data/*.bak*
+diagnose.bat
+create_shortcut.vbs
