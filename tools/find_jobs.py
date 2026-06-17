@@ -20,17 +20,25 @@ APP_DIR = Path(__file__).resolve().parents[1]
 def load_app_config():
     config_path = APP_DIR / "config.json"
     defaults = {
-        "jobTitles": ["Software Engineer", ".NET Developer", "Full Stack Developer", "Backend Developer"],
-        "mustHaveSkills": ["C#", ".NET", "ASP.NET", "Azure"],
-        "niceToHaveSkills": ["Angular", "React", "SQL", "Docker", "TypeScript", "REST API", "Microservices"],
+        "jobTitles": ["Software Engineer"],
+        "mustHaveSkills": [],
+        "niceToHaveSkills": [],
         "remoteBoost": True,
         "dailyTarget": 50,
         "priorityThresholds": {"high": 80, "medium": 68},
         "minFitScore": 62,
+        "maxRequiredExperienceYears": 0,
+        "minimumHourlyPay": 0,
+        "minimumAnnualPay": 0,
+        "defaultResume": "",
+        "searchDepth": 2,
+        "searchConcurrency": 64,
+        "searchTimeoutSeconds": 7,
+        "excludedTitlePatterns": ["manager", "principal engineer"],
     }
     if config_path.exists():
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, "r", encoding="utf-8-sig") as f:
                 user = json.load(f)
             return {**defaults, **user}
         except Exception:
@@ -73,29 +81,63 @@ HEADERS = [
     "Notes",
 ]
 
-QUERIES = [
-    ".NET Full Stack Developer Azure Angular",
-    "C# .NET Azure Developer",
-    "ASP.NET Core Angular Azure",
-    "Senior .NET Developer Remote",
-    "Full Stack .NET React Azure",
-    ".NET Azure OpenAI Developer",
-    "Software Engineer .NET C# Azure",
-    "Software Developer Full Stack Remote",
-    "Full Stack Engineer React Node.js",
-    "Backend Engineer API Microservices Remote",
-    "Senior Software Engineer Azure Cloud",
-    "Full Stack Software Developer JavaScript TypeScript",
-]
+def configured_values(key, fallback=None):
+    values = APP_CONFIG.get(key, fallback or [])
+    if isinstance(values, str):
+        values = [values]
+    result = []
+    for value in values or []:
+        cleaned = clean_text(value) if "clean_text" in globals() else str(value or "").strip()
+        if cleaned and cleaned.lower() not in {item.lower() for item in result}:
+            result.append(cleaned)
+    return result
+
+
+def configured_search_queries(limit=None):
+    titles = configured_values("jobTitles", ["Software Engineer"])
+    return (titles[:limit] if limit else titles) or ["Software Engineer"]
+
+
+def search_depth():
+    return max(1, min(3, int_value(APP_CONFIG.get("searchDepth") or 2)))
+
+
+def high_throughput_queries():
+    titles = configured_search_queries()
+    queries = list(titles)
+    if search_depth() >= 2:
+        queries.extend(f"{title} contract" for title in titles)
+    if search_depth() >= 3:
+        queries.extend(f"{title} remote" for title in titles)
+    return queries
+
+
+CONTRACT_QUERY_SUFFIXES = ("contract",)
+
+
+def contract_queries(queries, limit=None):
+    selected = queries[:limit] if limit else queries
+    return [
+        f"{query} {suffix}"
+        for query in selected
+        for suffix in CONTRACT_QUERY_SUFFIXES
+    ]
+
+
+def queries_with_contract(queries, base_limit=None, contract_limit=None):
+    base_queries = queries[:base_limit] if base_limit else queries
+    return list(base_queries) + contract_queries(queries, contract_limit)
+
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
 )
-RECENT_DAYS = 14
-MAX_SOURCE_WORKERS = 20
-USER_EXPERIENCE_YEARS = 6
-MAX_ACCEPTABLE_REQUIRED_YEARS = 7
+RECENT_DAYS = 1
+MAX_POST_AGE_HOURS = 24
+POSTED_AFTER = None
+MAX_SOURCE_WORKERS = max(8, min(96, int(APP_CONFIG.get("searchConcurrency") or 64)))
+SEARCH_TIMEOUT_SECONDS = max(4, min(20, int(APP_CONFIG.get("searchTimeoutSeconds") or 7)))
 INFOSYS_CAREER_API = "https://intapgateway.infosysapps.com/careersci/search/intapjbsrch/getCareerSearchJobs"
 MAX_COMPANY_PAGES = 12
 JOB_LINK_WORDS = (
@@ -235,42 +277,67 @@ NON_US_LOCATION_TERMS = {
     "austria",
     "bangalore",
     "belgium",
+    "belize",
     "bengaluru",
+    "bolivia",
     "brazil",
     "canada",
+    "caribbean",
     "chile",
     "china",
+    "colombia",
     "costa rica",
     "denmark",
+    "dominican republic",
+    "ecuador",
+    "el salvador",
     "europe",
     "france",
+    "finland",
     "germany",
+    "guatemala",
+    "guyana",
     "global",
     "hyderabad",
     "india",
+    "honduras",
     "ireland",
     "israel",
     "italy",
     "japan",
+    "latam",
+    "latin america",
+    "latin american",
     "mexico",
     "netherlands",
+    "new zealand",
+    "nicaragua",
+    "norway",
+    "panama",
+    "paraguay",
+    "peru",
     "poland",
     "portugal",
     "romania",
+    "serbia",
     "singapore",
     "spain",
     "sweden",
     "switzerland",
+    "suriname",
     "ukraine",
     "united kingdom",
+    "uruguay",
+    "venezuela",
     "worldwide",
 }
 
 # Each entry: (source_name, (query1, query2, ...), (domain1, ...))
-# Build Bing RSS queries dynamically from config jobTitles (up to 3 per source)
+# Use one combined full-time query and one contract query per portal.
 def _build_queries(url_prefix):
-    titles = APP_CONFIG.get("jobTitles", ["Software Engineer"])[:3]
-    return tuple(f"site:{url_prefix} {title}" for title in titles)
+    titles = configured_search_queries()
+    title_group = " OR ".join(f'"{title}"' for title in titles)
+    return (f"site:{url_prefix} ({title_group}) (jobs OR contract)",)
 
 
 BING_RSS_SOURCES = [
@@ -280,7 +347,6 @@ BING_RSS_SOURCES = [
     ("SmartRecruiters",    _build_queries("careers.smartrecruiters.com"),   ("smartrecruiters.com",)),
     ("Ashby",              _build_queries("jobs.ashbyhq.com"),              ("jobs.ashbyhq.com",)),
     ("Workday",            _build_queries("myworkdayjobs.com"),             ("myworkdayjobs.com",)),
-    ("Glassdoor",          _build_queries("glassdoor.com/job-listing"),     ("glassdoor.com",)),
     ("Wellfound",          _build_queries("wellfound.com/jobs"),            ("wellfound.com",)),
     # Staffing agencies
     ("Kforce",             _build_queries("kforce.com"),                    ("kforce.com",)),
@@ -289,7 +355,6 @@ BING_RSS_SOURCES = [
     ("Insight Global",     _build_queries("insightglobal.com"),             ("insightglobal.com",)),
     ("Vaco",               _build_queries("vaco.com"),                      ("vaco.com",)),
     ("Akkodis",            _build_queries("akkodis.com"),                   ("akkodis.com",)),
-    ("Randstad",           _build_queries("randstadusa.com"),               ("randstadusa.com",)),
     ("Apex Systems",       _build_queries("apexsystems.com"),               ("apexsystems.com",)),
     ("Collabera",          _build_queries("collabera.com"),                 ("collabera.com",)),
     ("Motion Recruitment", _build_queries("motionrecruitment.com"),         ("motionrecruitment.com",)),
@@ -310,7 +375,6 @@ PORTAL_ALIASES = {
     "built in": ("BuiltIn",),
     "remotive": ("Remotive",),
     "jobicy": ("Jobicy",),
-    "himalayas": ("Himalayas",),
     "the muse": ("The Muse",),
     "muse": ("The Muse",),
     "infosys": ("Infosys Careers",),
@@ -373,7 +437,7 @@ def log(message):
         handle.write(line + "\n")
 
 
-def fetch(url, timeout=15, retries=2):
+def fetch(url, timeout=SEARCH_TIMEOUT_SECONDS, retries=0):
     request = Request(
         url,
         headers={
@@ -402,12 +466,43 @@ def clean_text(value):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def normalize_employment_type(value):
+    text = clean_text(value)
+    if not text:
+        return ""
+    tokens = re.findall(r"[A-Za-z][A-Za-z_-]*", text)
+    labels = {
+        "contractor": "Contract",
+        "contract": "Contract",
+        "full_time": "Full-time",
+        "full-time": "Full-time",
+        "part_time": "Part-time",
+        "part-time": "Part-time",
+        "temporary": "Temporary",
+        "intern": "Internship",
+        "internship": "Internship",
+    }
+    normalized = []
+    for token in tokens:
+        label = labels.get(token.lower(), token.replace("_", " ").title())
+        if label not in normalized:
+            normalized.append(label)
+    return ", ".join(normalized) or text
+
+
+def normalize_portal_result(source, title, description):
+    title = clean_text(title)
+    description = clean_text(description)
+    company = source
+    return title, company, description
+
+
 def normalized_source_key(value):
     return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
 
 
 def source_catalog():
-    direct = ["Dice", "LinkedIn", "BuiltIn", "Remotive", "Jobicy", "Himalayas", "The Muse", "Infosys Careers"]
+    direct = ["Dice", "LinkedIn", "BuiltIn", "Remotive", "Jobicy", "The Muse", "Infosys Careers"]
     bing_sources = list(dict.fromkeys(source for source, _queries, _domains in BING_RSS_SOURCES))
     return direct + bing_sources
 
@@ -436,22 +531,46 @@ def int_value(value):
         return 0
 
 
-def date_from_epoch_ms(value):
+def datetime_from_epoch_ms(value):
     try:
-        return datetime.fromtimestamp(int(value) / 1000).strftime("%Y-%m-%d")
+        return datetime.fromtimestamp(int(value) / 1000).astimezone().isoformat(timespec="seconds")
     except Exception:
         return ""
 
 
-def is_recent_posted(value):
+def parse_posted_datetime(value):
     text = clean_text(value)
-    if not text or not re.match(r"^\d{4}-\d{2}-\d{2}$", text):
-        return True
+    if not text:
+        return None, False
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        try:
+            return datetime.strptime(text, "%Y-%m-%d").astimezone(), True
+        except ValueError:
+            return None, False
+    normalized = text.replace("Z", "+00:00")
     try:
-        posted = datetime.strptime(text, "%Y-%m-%d").date()
+        posted = datetime.fromisoformat(normalized)
     except ValueError:
-        return True
-    return posted >= (datetime.now().date() - timedelta(days=RECENT_DAYS))
+        return None, False
+    if posted.tzinfo is None:
+        posted = posted.astimezone()
+    return posted.astimezone(), False
+
+
+def is_recent_posted(value):
+    posted, date_only = parse_posted_datetime(value)
+    if posted is None:
+        return False
+    now = datetime.now().astimezone()
+    if posted > now + timedelta(minutes=10):
+        return False
+    if POSTED_AFTER is not None:
+        # Date-only values cannot prove the job was posted after an hourly cutoff.
+        return not date_only and posted > POSTED_AFTER
+    if date_only:
+        # Date-only values cannot prove a rolling 24-hour window; keep only today's posts.
+        return posted.date() >= now.date()
+    return posted >= (now - timedelta(hours=MAX_POST_AGE_HOURS))
 
 
 def required_experience_years(text):
@@ -597,14 +716,8 @@ def is_us_location(location, summary=""):
     location_text = clean_text(location).lower()
     if not location_text:
         return True
-    # Explicitly remote / worldwide with no country restriction → allow through
-    if re.search(r"\b(remote|worldwide|anywhere|global)\b", location_text):
-        # Still block if summary explicitly says non-US
-        summary_text = clean_text(summary).lower()
-        if any(re.search(rf"\b{re.escape(term)}\b", summary_text) for term in NON_US_LOCATION_TERMS):
-            return False
-        return True
     normalized = re.sub(r"[^a-z0-9.]+", " ", location_text)
+    summary_text = clean_text(summary).lower()
     tokens = set(re.findall(r"\b[a-z]{2}\b", normalized))
     if any(re.search(rf"\b{re.escape(term)}\b", normalized) for term in US_LOCATION_TERMS):
         return True
@@ -614,9 +727,16 @@ def is_us_location(location, summary=""):
         return True
     if any(re.search(rf"\b{re.escape(term)}\b", normalized) for term in NON_US_LOCATION_TERMS):
         return False
-    summary_text = clean_text(summary).lower()
+    # Explicitly remote / worldwide with no country restriction → allow through
+    if re.search(r"\b(remote|worldwide|anywhere|global)\b", location_text):
+        # Still block if summary explicitly says non-US
+        if any(re.search(rf"\b{re.escape(term)}\b", summary_text) for term in NON_US_LOCATION_TERMS):
+            return False
+        return True
     if re.search(r"\b(united states|usa|u\.s\.|us only|within the us|within u\.s\.)\b", summary_text):
         return True
+    if any(re.search(rf"\b{re.escape(term)}\b", summary_text) for term in NON_US_LOCATION_TERMS):
+        return False
     # Ambiguous location — allow through rather than silently dropping
     return True
 
@@ -627,22 +747,71 @@ def pay_too_low(pay):
     if not numbers:
         return False
     high = max(numbers)
+    minimum_hourly = float(APP_CONFIG.get("minimumHourlyPay") or 0)
+    minimum_annual = float(APP_CONFIG.get("minimumAnnualPay") or 0)
     if "hour" in lowered or "/hr" in lowered or "per hour" in lowered:
-        return high < 55
+        return minimum_hourly > 0 and high < minimum_hourly
     if "year" in lowered or "annual" in lowered:
-        return high < 100
+        if high < 1000 and minimum_annual >= 1000:
+            high *= 1000
+        return minimum_annual > 0 and high < minimum_annual
     return False
+
+
+TITLE_STOP_WORDS = {
+    "a", "an", "and", "contract", "contractor", "entry", "full", "ii", "iii",
+    "junior", "level", "part", "remote", "senior", "sr", "the", "time",
+}
+
+
+def match_tokens(value):
+    return {
+        token
+        for token in re.findall(r"[a-z0-9+#.]+", clean_text(value).lower())
+        if len(token) > 1 and token not in TITLE_STOP_WORDS
+    }
+
+
+def title_relevance(title):
+    actual = clean_text(title).lower()
+    actual_tokens = match_tokens(actual)
+    best = 0.0
+    for configured_title in configured_values("jobTitles", ["Software Engineer"]):
+        target = configured_title.lower()
+        if target in actual:
+            best = max(best, 1.0)
+            continue
+        target_tokens = match_tokens(target)
+        if target_tokens:
+            best = max(best, len(actual_tokens & target_tokens) / len(target_tokens))
+    return best
+
+
+def excluded_title_reason(title):
+    normalized = re.sub(r"[^a-z0-9+#.]+", " ", clean_text(title).lower()).strip()
+    for pattern in configured_values("excludedTitlePatterns", ["manager", "principal engineer"]):
+        pattern_text = re.sub(r"[^a-z0-9+#.]+", " ", pattern.lower()).strip()
+        if pattern_text == "manager" and re.search(r"\bmanager\b", normalized):
+            return "excluded_manager"
+        if pattern_text == "principal engineer" and re.search(
+            r"\bprincipal\b(?:\s+\w+){0,3}\s+\bengineer(?:ing)?\b|\bprincipal engineer(?:ing)?\b",
+            normalized,
+        ):
+            return "excluded_principal_engineer"
+        if pattern_text and re.search(rf"\b{re.escape(pattern_text)}\b", normalized):
+            return f"excluded_{pattern_text.replace(' ', '_')}"
+    return ""
 
 
 def score_job(title, summary, company="", pay="", work_mode=""):
     """Score a job based on user-configured skills and job titles from config.json."""
     text = f"{title} {summary} {company} {work_mode}".lower()
-    score = 42
+    score = 38
 
-    must_have = [s.lower() for s in APP_CONFIG.get("mustHaveSkills", [])]
-    nice_to_have = [s.lower() for s in APP_CONFIG.get("niceToHaveSkills", [])]
-    job_titles = [t.lower() for t in APP_CONFIG.get("jobTitles", [])]
+    must_have = [s.lower() for s in configured_values("mustHaveSkills")]
+    nice_to_have = [s.lower() for s in configured_values("niceToHaveSkills")]
     remote_boost = APP_CONFIG.get("remoteBoost", True)
+    relevance = title_relevance(title)
 
     # Must-have skills: +20 each, capped at +40
     must_hits = sum(1 for skill in must_have if skill in text)
@@ -652,9 +821,8 @@ def score_job(title, summary, company="", pay="", work_mode=""):
     nice_hits = sum(1 for skill in nice_to_have if skill in text)
     score += min(nice_hits * 6, 24)
 
-    # Job title keyword matches: +10 each, capped at +20
-    title_hits = sum(1 for jt in job_titles if jt in text)
-    score += min(title_hits * 10, 20)
+    # Title relevance is the primary signal and supports arbitrary professions.
+    score += round(relevance * 34)
 
     # Remote boost
     if remote_boost and ("remote" in text or "remote" in work_mode.lower()):
@@ -664,20 +832,20 @@ def score_job(title, summary, company="", pay="", work_mode=""):
     if pay and not pay_too_low(pay):
         score += 2
 
-    # Penalty: no must-have skills AND no job title match
-    if must_hits == 0 and title_hits == 0:
-        score -= 14
+    # Keep unrelated roles out even when their descriptions mention a generic skill.
+    if relevance == 0:
+        score -= 24
+    elif relevance < 0.5:
+        score -= 8
 
-    return max(0, min(99, score))
+    score = max(0, min(99, score))
+    if 0 < relevance < 0.6:
+        score = min(score, 59)
+    return score
 
 
 def selected_resume(title, summary):
-    text = f"{title} {summary}".lower()
-    if re.search(r"\b(ai|openai|genai|rag|machine learning|ml|copilot)\b", text):
-        return "Candidate_FullStack_NET_Cloud_AI.docx"
-    if "azure" in text or "cloud" in text:
-        return "Candidate_FullStack_NET_Cloud.docx"
-    return "Candidate_FullStack_NET_Cloud.docx"
+    return clean_text(APP_CONFIG.get("defaultResume", ""))
 
 
 def priority(score, status):
@@ -695,17 +863,30 @@ def priority(score, status):
 
 def build_row(source, url, title, company, location, posted, employment, pay, summary, work_mode):
     title = clean_text(title)
+    excluded_reason = excluded_title_reason(title)
+    if excluded_reason:
+        return None, excluded_reason
     company = clean_text(company) or "Company not listed"
     location = clean_text(location) or "United States"
     summary = clean_text(summary)
-    employment = clean_text(employment)
+    employment = normalize_employment_type(employment)
     pay = clean_text(pay) or "Not listed"
     work_mode = clean_text(work_mode)
+    posted = clean_text(posted)
+    if not is_recent_posted(posted):
+        return None, "outside_24_hours"
+    if not employment or employment.lower() == "not listed":
+        employment_text = f"{title} {summary}".lower()
+        if re.search(r"\b(contract(?:or)?|contract-to-hire|contract to hire|c2h|c2c|w2 contract|1099)\b", employment_text):
+            employment = "Contract"
+        else:
+            employment = employment or "Not listed"
     if not is_us_location(location, summary):
         return None, "non_us_location"
     blob = f"{title} {company} {location} {employment} {pay} {summary}"
     required_years = required_experience_years(blob)
-    if required_years > MAX_ACCEPTABLE_REQUIRED_YEARS:
+    max_required_years = int_value(APP_CONFIG.get("maxRequiredExperienceYears"))
+    if max_required_years > 0 and required_years > max_required_years:
         return None, f"requires_{required_years}_years"
     score = score_job(title, summary, company, pay, work_mode)
     min_score = APP_CONFIG.get("minFitScore", 62)
@@ -746,14 +927,14 @@ def build_row(source, url, title, company, location, posted, employment, pay, su
 
 
 def dice_search_urls():
-    for query in QUERIES[:5]:
+    queries = high_throughput_queries()
+    for query in queries:
         encoded = quote_plus(query)
-        for page in range(1, 3):
-            yield (
-                "https://www.dice.com/jobs"
-                f"?q={encoded}&location=United%20States&filters.postedDate=ONE"
-                f"&radius=30&radiusUnit=mi&page={page}&pageSize=20&language=en"
-            )
+        yield (
+            "https://www.dice.com/jobs"
+            f"?q={encoded}&location=United%20States&filters.postedDate=THREE"
+            f"&radius=30&radiusUnit=mi&page=1&pageSize=40&language=en"
+        )
 
 
 def parse_dice(text):
@@ -776,7 +957,7 @@ def parse_dice(text):
         workplace = ", ".join(re.findall(r'\\\"workplaceTypes\\\":\[(.*?)\]', chunk)[:1]).replace(r"\"", "")
         location = get("displayName")
         work_mode = "Remote" if get_bool("isRemote") else clean_text(workplace)
-        posted = get("postedDate")[:10] or "Today"
+        posted = get("postedDate")
         row, reason = build_row(
             "Dice",
             get("detailsPageUrl"),
@@ -795,12 +976,13 @@ def parse_dice(text):
 
 
 def linkedin_search_urls():
-    for query in QUERIES[:5]:
+    queries = high_throughput_queries()
+    for query in queries:
         encoded = quote_plus(query)
         for start in (0,):
             yield (
                 "https://www.linkedin.com/jobs/search/"
-                f"?keywords={encoded}&location=United%20States&f_TPR=r86400&sortBy=DD&start={start}"
+                f"?keywords={encoded}&location=United%20States&f_TPR=r172800&sortBy=DD&start={start}"
             )
 
 
@@ -816,7 +998,6 @@ def parse_linkedin_detail(text):
 def parse_linkedin(text):
     jobs = []
     chunks = re.findall(r"<li>(.*?)</li>", text, flags=re.S)
-    detail_fetches = 0
     for chunk in chunks:
         if "base-search-card" not in chunk or "/jobs/view/" not in chunk:
             continue
@@ -833,7 +1014,7 @@ def parse_linkedin(text):
         )
         location = find(r'job-search-card__location[^>]*>(.*?)</span>')
         date_match = re.search(r'<time[^>]*datetime="([^"]+)"', chunk)
-        posted = date_match.group(1) if date_match else "LinkedIn recent"
+        posted = date_match.group(1) if date_match else ""
         summary = f"{title} at {company}. Public LinkedIn search result."
         preliminary, reason = build_row(
             "LinkedIn",
@@ -849,36 +1030,13 @@ def parse_linkedin(text):
         )
         if not preliminary:
             continue
-        detail = ""
-        if url and detail_fetches < 4:
-            detail_fetches += 1
-            try:
-                detail = parse_linkedin_detail(fetch(url, timeout=5))
-                if detail:
-                    summary = detail
-            except Exception:
-                pass
-        if not detail:
-            continue
-        row, reason = build_row(
-            "LinkedIn",
-            url,
-            title,
-            company,
-            location,
-            posted,
-            "Not listed",
-            "Not listed",
-            summary,
-            "Remote/Hybrid/Onsite not listed",
-        )
-        if row:
-            jobs.append(row)
+        jobs.append(preliminary)
     return jobs
 
 
 def simplyhired_search_urls():
-    for query in QUERIES[:8]:
+    queries = high_throughput_queries()
+    for query in queries:
         encoded = quote_plus(query)
         yield f"https://www.simplyhired.com/search?q={encoded}&l=United+States"
 
@@ -893,7 +1051,7 @@ def parse_simplyhired(text):
         title = item.get("title", "")
         company = item.get("company", "")
         location = item.get("location", "United States")
-        posted = date_from_epoch_ms(item.get("dateOnIndeed")) or "SimplyHired recent"
+        posted = datetime_from_epoch_ms(item.get("dateOnIndeed"))
         if not is_recent_posted(posted):
             continue
         work_mode = ", ".join(item.get("remoteAttributes") or []) or "Remote/Hybrid/Onsite not listed"
@@ -921,14 +1079,11 @@ def parse_simplyhired(text):
 
 
 def builtin_search_urls():
-    queries = [
-        ".NET Azure", "C# Azure", ".NET Full Stack", "Azure AI .NET",
-        "Software Engineer", "Full Stack Engineer", "Backend Engineer", "Software Developer",
-    ]
+    queries = high_throughput_queries()
     for query in queries:
         encoded = quote_plus(query)
         yield (
-            "https://builtin.com/jobs/dev-engineering"
+            "https://builtin.com/jobs"
             f"?search={encoded}&location=United%20States&days_since_posted={RECENT_DAYS}"
         )
 
@@ -999,14 +1154,23 @@ def parse_builtin(text):
     return jobs
 
 
-def bing_rss_url(query):
-    return f"https://www.bing.com/search?format=rss&q={quote_plus(query)}"
+def portal_search_url(query):
+    return f"https://search.yahoo.com/search?p={quote_plus(query)}"
 
 
-def extract_bing_redirect(raw_link):
-    """Bing RSS wraps target URLs in a redirect like bing.com/cr?...&url=<encoded>. Unwrap it."""
+def extract_search_redirect(raw_link):
+    """Unwrap Yahoo, DuckDuckGo, or Bing redirects to their portal destination."""
     if not raw_link:
         return raw_link
+    raw_link = html.unescape(raw_link)
+    if raw_link.startswith("//"):
+        raw_link = f"https:{raw_link}"
+    m = re.search(r"/RU=([^/]+)/RK=", raw_link)
+    if m:
+        return unquote(m.group(1))
+    m = re.search(r"[?&]uddg=([^&]+)", raw_link)
+    if m:
+        return unquote(m.group(1))
     # Try query param ?url= or &url=
     m = re.search(r'[?&]url=([^&]+)', raw_link)
     if m:
@@ -1018,40 +1182,51 @@ def extract_bing_redirect(raw_link):
     return raw_link
 
 
-def parse_bing_rss(text, source, allowed_domains):
+def parse_portal_search(text, source, allowed_domains):
     jobs = []
-    try:
-        root = ET.fromstring(text)
-    except ET.ParseError:
-        log(f"[{source}] Bing RSS XML parse error")
-        return jobs
-    items = root.findall(".//item")
+    items = re.findall(
+        r'<li><div class="dd algo.*?</li>',
+        text,
+        re.I | re.S,
+    )
     domain_misses = 0
-    score_drops = 0
+    filtered = 0
+    seen_links = set()
     for item in items:
-        title = clean_text(item.findtext("title", ""))
-        raw_link = clean_text(item.findtext("link", ""))
-        description = clean_text(item.findtext("description", ""))
-        # Unwrap Bing redirect to get the real URL
-        link = extract_bing_redirect(raw_link)
+        link_match = re.search(
+            r'href="(https://r\.search\.yahoo\.com/[^"]+)"',
+            item,
+            re.I,
+        )
+        title_match = re.search(r'<h3[^>]*>(.*?)</h3>', item, re.I | re.S)
+        snippet_match = re.search(
+            r'<div class="compText[^"]*"[^>]*>(.*?)</div>\s*</div>',
+            item,
+            re.I | re.S,
+        )
+        if not link_match:
+            continue
+        title = clean_text(title_match.group(1)) if title_match else ""
+        description = clean_text(snippet_match.group(1)) if snippet_match else ""
+        title, company, description = normalize_portal_result(source, title, description)
+        link = extract_search_redirect(link_match.group(1))
         host = urlsplit(link).netloc.lower()
         if not link or not any(domain in host for domain in allowed_domains):
-            # Also try to find the target domain URL inside the description
-            for domain in allowed_domains:
-                dm = re.search(rf'https?://[^\s"<>]*{re.escape(domain)}[^\s"<>]*', description)
-                if dm:
-                    link = dm.group(0)
-                    host = urlsplit(link).netloc.lower()
-                    break
-            else:
-                domain_misses += 1
-                continue
-        summary = f"{description} Career portal search result; verify posted date before applying."
+            domain_misses += 1
+            continue
+        if not is_job_related_url(link):
+            filtered += 1
+            continue
+        link_key = canonical_url(link)
+        if link_key in seen_links:
+            continue
+        seen_links.add(link_key)
+        summary = f"{description} Career portal search result; verify job details and posted date before applying."
         row, reason = build_row(
             source,
             link,
             title,
-            infer_company_from_url(link, source),
+            company if company != source else infer_company_from_url(link, source),
             "United States",
             "Verify on portal",
             "Not listed",
@@ -1061,10 +1236,10 @@ def parse_bing_rss(text, source, allowed_domains):
         )
         if row:
             jobs.append(row)
-        elif reason and reason.startswith("score_"):
-            score_drops += 1
+        else:
+            filtered += 1
     if not jobs and items:
-        log(f"[{source}] {len(items)} RSS items: {domain_misses} domain-mismatch, {score_drops} low-score, 0 kept")
+        log(f"[{source}] {len(items)} search results: {domain_misses} domain-mismatch, {filtered} filtered, 0 kept")
     return jobs
 
 
@@ -1086,7 +1261,8 @@ def parse_infosys(text):
         if not isinstance(item, dict):
             continue
         min_exp = int_value(item.get("minExperienceLevel"))
-        if min_exp > MAX_ACCEPTABLE_REQUIRED_YEARS:
+        max_required_years = int_value(APP_CONFIG.get("maxRequiredExperienceYears"))
+        if max_required_years > 0 and min_exp > max_required_years:
             continue
         max_exp = int_value(item.get("maxExperienceLevel"))
         reference = clean_text(item.get("referenceCode") or item.get("jobReferenceCode") or item.get("requisitionId"))
@@ -1095,7 +1271,7 @@ def parse_infosys(text):
             job_url = f"https://career.infosys.com/jobdesc?jobReferenceCode={quote_plus(reference)}&sourceId={quote_plus(source_id)}"
         else:
             job_url = "https://career.infosys.com/joblist"
-        posted = clean_text(item.get("createdOn") or item.get("postingDate") or "")[:10] or "Infosys recent"
+        posted = clean_text(item.get("createdOn") or item.get("postingDate") or "")
         if not is_recent_posted(posted):
             continue
         location = clean_text(item.get("location") or item.get("city") or "Global")
@@ -1127,7 +1303,8 @@ def parse_infosys(text):
 
 
 def remotive_search_urls():
-    for query in (".net azure", "c# azure", ".net full stack"):
+    queries = high_throughput_queries()
+    for query in queries:
         yield f"https://remotive.com/api/remote-jobs?search={quote_plus(query)}"
 
 
@@ -1135,7 +1312,7 @@ def parse_remotive(text):
     jobs = []
     data = json.loads(text)
     for item in data.get("jobs", []):
-        posted = clean_text(item.get("publication_date", ""))[:10] or "Remotive recent"
+        posted = clean_text(item.get("publication_date", ""))
         if not is_recent_posted(posted):
             continue
         row, reason = build_row(
@@ -1156,7 +1333,7 @@ def parse_remotive(text):
 
 
 def jobicy_search_urls():
-    for tag in ("software", "developer", "full-stack"):
+    for tag in configured_search_queries():
         yield f"https://jobicy.com/api/v2/remote-jobs?count=50&tag={quote_plus(tag)}"
 
 
@@ -1164,7 +1341,7 @@ def parse_jobicy(text):
     jobs = []
     data = json.loads(text)
     for item in data.get("jobs", []):
-        posted = clean_text(item.get("pubDate", ""))[:10] or "Jobicy recent"
+        posted = clean_text(item.get("pubDate", ""))
         if not is_recent_posted(posted):
             continue
         salary = ""
@@ -1187,33 +1364,82 @@ def parse_jobicy(text):
     return jobs
 
 
-def himalayas_search_urls():
-    for query in (".net azure", "c# azure", ".net full stack"):
-        yield f"https://himalayas.app/jobs/api?search={quote_plus(query)}&limit=50"
+def randstad_search_urls():
+    slugs = []
+    for title in configured_search_queries():
+        special_slugs = {
+            "backend developer": "back-end-developer",
+            "c# developer": "c-sharp-developer",
+        }
+        slug = special_slugs.get(title.lower()) or re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+        if slug and slug not in slugs:
+            slugs.append(slug)
+    for slug in slugs:
+        yield f"https://www.randstadusa.com/jobs/q-{slug}/"
 
 
-def parse_himalayas(text):
+def format_randstad_salary(value):
+    if not isinstance(value, dict):
+        return "Not listed"
+    minimum = value.get("min")
+    maximum = value.get("max")
+    fixed = value.get("fixed")
+    unit = clean_text(value.get("type")).lower()
+    if minimum is not None and maximum is not None:
+        pay = f"${minimum:g}-${maximum:g}"
+    elif fixed is not None:
+        pay = f"${fixed:g}"
+    elif minimum is not None:
+        pay = f"${minimum:g}+"
+    elif maximum is not None:
+        pay = f"Up to ${maximum:g}"
+    else:
+        return "Not listed"
+    unit = unit.removeprefix("per ").strip()
+    return f"{pay}/{unit}" if unit else pay
+
+
+def parse_randstad(text):
+    marker = '"searchResults":'
+    start = text.find(marker)
+    if start < 0:
+        return []
+    try:
+        results, _ = json.JSONDecoder().raw_decode(text, start + len(marker))
+    except json.JSONDecodeError:
+        return []
     jobs = []
-    data = json.loads(text)
-    for item in data.get("jobs", []):
-        posted = clean_text(item.get("pubDate", ""))[:10] or "Himalayas recent"
+    for item in results.get("hits", []):
+        if not isinstance(item, dict) or not item.get("detailsUrl"):
+            continue
+        posted = datetime_from_epoch_ms(item.get("createdDate"))
         if not is_recent_posted(posted):
             continue
-        locations = item.get("locationRestrictions") or ["Remote"]
-        salary = ""
-        if item.get("minSalary") or item.get("maxSalary"):
-            salary = f"{item.get('minSalary') or ''}-{item.get('maxSalary') or ''} {item.get('currency') or ''}"
+        location = item.get("jobLocation") or {}
+        location_text = clean_text(
+            ", ".join(
+                str(location.get(key, ""))
+                for key in ("city", "state", "postalCode")
+                if location.get(key)
+            )
+        ) or "United States"
+        summary_parts = [
+            item.get("summary", ""),
+            item.get("description", ""),
+            " ".join(item.get("qualifications") or []),
+            " ".join(item.get("responsibilities") or []),
+        ]
         row, reason = build_row(
-            "Himalayas",
-            item.get("applicationLink") or item.get("guid", ""),
+            "Randstad",
+            item.get("detailsUrl", ""),
             item.get("title", ""),
-            item.get("companyName", ""),
-            ", ".join(locations),
+            item.get("opCoName") or item.get("lobName") or "Randstad",
+            location_text,
             posted,
-            item.get("employmentType", ""),
-            salary,
-            " ".join([item.get("excerpt", ""), item.get("description", "")]),
-            "Remote",
+            item.get("employmentType") or item.get("type") or "Not listed",
+            format_randstad_salary(item.get("salary")),
+            " ".join(clean_text(part) for part in summary_parts if clean_text(part)),
+            "Remote" if item.get("isRemote") else "Hybrid/Onsite not listed",
         )
         if row:
             jobs.append(row)
@@ -1221,8 +1447,8 @@ def parse_himalayas(text):
 
 
 def themuse_search_urls():
-    for page in (1, 2):
-        yield f"https://www.themuse.com/api/public/jobs?query={quote_plus('.NET Azure')}&page={page}"
+    for query in high_throughput_queries():
+        yield f"https://www.themuse.com/api/public/jobs?query={quote_plus(query)}&page=1"
 
 
 def parse_themuse(text):
@@ -1232,7 +1458,7 @@ def parse_themuse(text):
         company = (item.get("company") or {}).get("name", "") if isinstance(item.get("company"), dict) else ""
         locations = ", ".join(location.get("name", "") for location in item.get("locations", []) if isinstance(location, dict))
         levels = ", ".join(level.get("name", "") for level in item.get("levels", []) if isinstance(level, dict))
-        posted = clean_text(item.get("publication_date", ""))[:10] or "The Muse recent"
+        posted = clean_text(item.get("publication_date", ""))
         if not is_recent_posted(posted):
             continue
         row, reason = build_row(
@@ -1298,6 +1524,38 @@ def company_name_from_site(url):
     return pretty_company(label) or "Company not listed"
 
 
+def json_ld_text(value):
+    if isinstance(value, dict):
+        return clean_text(value.get("name") or value.get("value") or "")
+    if isinstance(value, list):
+        return ", ".join(part for part in (json_ld_text(item) for item in value) if part)
+    return clean_text(value)
+
+
+def format_json_ld_salary(value):
+    if not isinstance(value, dict):
+        return clean_text(value) or "Not listed"
+    currency = clean_text(value.get("currency") or "USD")
+    amount = value.get("value") if isinstance(value.get("value"), dict) else value
+    minimum = amount.get("minValue")
+    maximum = amount.get("maxValue")
+    exact = amount.get("value")
+    unit = clean_text(amount.get("unitText")).lower()
+    symbol = "$" if currency.upper() == "USD" else f"{currency} "
+    if minimum is not None and maximum is not None:
+        salary = f"{symbol}{minimum:g}-{symbol}{maximum:g}"
+    elif exact is not None:
+        salary = f"{symbol}{exact:g}"
+    elif minimum is not None:
+        salary = f"{symbol}{minimum:g}+"
+    elif maximum is not None:
+        salary = f"Up to {symbol}{maximum:g}"
+    else:
+        return "Not listed"
+    unit_labels = {"hour": "/hour", "year": "/year", "month": "/month", "week": "/week", "day": "/day"}
+    return f"{salary}{unit_labels.get(unit, f'/{unit}' if unit else '')}"
+
+
 def parse_json_ld_jobs(text, page_url, fallback_company):
     jobs = []
     for script in re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', text, flags=re.I | re.S):
@@ -1339,7 +1597,7 @@ def parse_json_ld_jobs(text, page_url, fallback_company):
                     location_values.append(
                         clean_text(
                             ", ".join(
-                                str(address.get(key, ""))
+                                json_ld_text(address.get(key, ""))
                                 for key in ("addressLocality", "addressRegion", "addressCountry")
                                 if address.get(key)
                             )
@@ -1352,9 +1610,9 @@ def parse_json_ld_jobs(text, page_url, fallback_company):
                 node.get("title", ""),
                 company,
                 location_text,
-                clean_text(node.get("datePosted", ""))[:10] or "Company site recent",
+                clean_text(node.get("datePosted", "")),
                 node.get("employmentType", "Not listed"),
-                clean_text(node.get("baseSalary", "")) or "Not listed",
+                format_json_ld_salary(node.get("baseSalary")),
                 node.get("description", ""),
                 "Remote/Hybrid/Onsite not listed",
             )
@@ -1371,10 +1629,10 @@ def parse_company_page_jobs(text, page_url, fallback_company):
     title_match = re.search(r"<title[^>]*>(.*?)</title>", text, flags=re.I | re.S)
     if title_match:
         page_title = clean_text(title_match.group(1))
-    if not re.search(r"\b(developer|engineer|architect|\.net|software|full.?stack|angular|c#)\b", page_title, flags=re.I):
+    if title_relevance(page_title) < 0.5:
         heading = re.search(r"<h1[^>]*>(.*?)</h1>", text, flags=re.I | re.S)
         page_title = clean_text(heading.group(1)) if heading else page_title
-    if not re.search(r"\b(developer|engineer|architect|\.net|software|full.?stack|angular|c#)\b", page_title, flags=re.I):
+    if title_relevance(page_title) < 0.5:
         return jobs
     page_text = clean_text(text)
     row, reason = build_row(
@@ -1410,7 +1668,7 @@ def collect_company_site(company_url):
             continue
         seen_pages.add(key)
         try:
-            page = fetch(current, timeout=12)
+            page = fetch(current, timeout=12, retries=1)
             requests += 1
         except Exception as error:
             failures.append(f"{current} failed: {str(error)[:120]}")
@@ -1445,9 +1703,9 @@ def source_requests(selected_sources=None):
     if allowed("Jobicy"):
         for url in jobicy_search_urls():
             yield "Jobicy", url, parse_jobicy
-    if allowed("Himalayas"):
-        for url in himalayas_search_urls():
-            yield "Himalayas", url, parse_himalayas
+    if allowed("Randstad"):
+        for url in randstad_search_urls():
+            yield "Randstad", url, parse_randstad
     if allowed("The Muse"):
         for url in themuse_search_urls():
             yield "The Muse", url, parse_themuse
@@ -1459,7 +1717,7 @@ def source_requests(selected_sources=None):
             if isinstance(queries, str):
                 queries = (queries,)
             for query in queries:
-                yield source, bing_rss_url(query), lambda text, source=source, allowed_domains=allowed_domains: parse_bing_rss(text, source, allowed_domains)
+                yield source, portal_search_url(query), lambda text, source=source, allowed_domains=allowed_domains: parse_portal_search(text, source, allowed_domains)
 
 
 # ─── Indeed (browser-like headers to reduce bot blocking) ───────────────────
@@ -1535,7 +1793,7 @@ def _parse_indeed_job_item(jk, item, jobs):
             pay = f"${int(pay_min):,}+{suffix}"
 
     # Posted date (pubDate is Unix ms)
-    posted = date_from_epoch_ms(item.get("pubDate") or item.get("datePosted")) or "Indeed recent"
+    posted = datetime_from_epoch_ms(item.get("pubDate") or item.get("datePosted"))
     if not is_recent_posted(posted):
         return
 
@@ -1591,19 +1849,20 @@ def parse_indeed(text):
 
 
 def indeed_search_urls():
-    for query in QUERIES[:6]:
+    queries = configured_search_queries()
+    for query in queries:
         encoded = quote_plus(query)
         yield (
             f"https://www.indeed.com/jobs"
-            f"?q={encoded}&l=United+States&sort=date&fromage=14&limit=25"
+            f"?q={encoded}&l=United+States&sort=date&fromage=2&limit=25"
         )
 
 
 def collect_candidates(selected_sources=None):
     candidates = []
     failures = []
-    source_counts = {}
     requests = list(source_requests(selected_sources))
+    source_counts = {source: 0 for source, _url, _parser in requests}
     with ThreadPoolExecutor(max_workers=MAX_SOURCE_WORKERS) as executor:
         futures = {
             executor.submit(fetch, url): (source, url, parser)
@@ -1619,6 +1878,23 @@ def collect_candidates(selected_sources=None):
             except Exception as error:
                 failures.append(f"{source} failed: {str(error)[:160]}")
     return candidates, failures, source_counts, len(requests)
+
+
+def deduplicate_candidates(candidates):
+    unique = []
+    seen_urls = set()
+    seen_text = set()
+    for row in candidates:
+        key_url = canonical_url(row.get("URL"))
+        key_text = text_key(row)
+        if (key_url and key_url in seen_urls) or (key_text and key_text in seen_text):
+            continue
+        unique.append(row)
+        if key_url:
+            seen_urls.add(key_url)
+        if key_text:
+            seen_text.add(key_text)
+    return unique
 
 
 def merge_dashboard(rows):
@@ -1660,6 +1936,8 @@ def merge_dashboard(rows):
             "notes": row.get("Notes"),
         }
         if item:
+            if "applied" in clean_text(item.get("status", "")).lower() or item.get("dateApplied"):
+                continue
             for preserve in ("jd", "jdPath", "generatedResumePath", "generatedCoverPath", "resumeUsedPath", "dateApplied"):
                 patch[preserve] = item.get(preserve, "")
             patch["id"] = item.get("id") or patch["id"]
@@ -1681,7 +1959,14 @@ def main():
     parser = argparse.ArgumentParser(description="Find jobs for the local dashboard")
     parser.add_argument("--portal", default="", help="Optional portal/source name to search, such as Infosys or Dice")
     parser.add_argument("--company-url", default="", help="Optional company careers or website URL to scan for jobs")
+    parser.add_argument("--posted-after", default="", help="Only keep jobs with an exact posting timestamp after this ISO datetime")
     args = parser.parse_args()
+    global POSTED_AFTER
+    if args.posted_after:
+        cutoff, date_only = parse_posted_datetime(args.posted_after)
+        if cutoff is None or date_only:
+            raise SystemExit("--posted-after must be a valid ISO datetime with time")
+        POSTED_AFTER = cutoff
     selected_sources = selected_sources_for_portal(args.portal)
     # When doing a full search (no --portal flag), apply config-based source filter
     if not args.portal:
@@ -1728,8 +2013,6 @@ def main():
       return
     LOCK_PATH.write_text(str(datetime.now().isoformat()), encoding="utf-8")
     try:
-        global RECENT_DAYS
-        RECENT_DAYS = days_since_last_refresh()
         date_value = today()
         rows = load_csv()
         id_gen = next_id(rows, date_value)
@@ -1740,8 +2023,10 @@ def main():
         else:
             candidates, failures, source_counts, requests_searched = collect_candidates(selected_sources)
 
+        raw_candidate_count = len(candidates)
+        candidates = deduplicate_candidates(candidates)
+        duplicate_count = raw_candidate_count - len(candidates)
         added_rows = []
-        duplicate_count = 0
         for row in candidates:
             key_url = canonical_url(row.get("URL"))
             key_text = text_key(row)
@@ -1762,12 +2047,16 @@ def main():
             "date": date_value,
             "portal": args.portal,
             "companyUrl": args.company_url,
+            "searchWindow": f"after {POSTED_AFTER.isoformat()}" if POSTED_AFTER else "past 24 hours",
             "selectedSources": sorted(selected_sources or []),
             "candidates": len(candidates),
+            "rawCandidates": raw_candidate_count,
             "added": len(added_rows),
             "duplicatesSkipped": duplicate_count,
             "failures": failures[:8],
             "requestsSearched": requests_searched,
+            "sourcesSearched": len(source_counts),
+            "sourcesWithMatches": sum(1 for count in source_counts.values() if count > 0),
             "sourceBreakdown": dict(sorted(source_counts.items())),
             "dashboardAdded": dashboard_added,
             "dashboardUpdated": dashboard_updated,
@@ -1785,11 +2074,6 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as exc:
-        log(f"ERROR {exc}")
-        raise
     try:
         main()
     except Exception as exc:

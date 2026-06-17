@@ -16,6 +16,8 @@ const state = {
   chatBusy: false,
   bulkSelected: new Set(),
   autoRefreshAt: null,
+  autoRefreshNextAt: null,
+  autoRefreshRunning: false,
 };
 
 let homeGraphRange = "14d"; // "7d" | "14d" | "30d"
@@ -33,8 +35,8 @@ async function loadAppConfig() {
 }
 
 const SOURCE_GROUPS = {
-  direct: ["Dice", "LinkedIn", "BuiltIn", "Remotive", "Jobicy", "Himalayas", "The Muse", "Infosys Careers"],
-  ats: ["Greenhouse", "Lever", "SmartRecruiters", "Ashby", "Workday", "Glassdoor", "Wellfound"],
+  direct: ["Dice", "LinkedIn", "BuiltIn", "Remotive", "Jobicy", "The Muse", "Infosys Careers"],
+  ats: ["Greenhouse", "Lever", "SmartRecruiters", "Ashby", "Workday", "Wellfound"],
   staffing: ["Kforce", "TEKsystems", "Robert Half", "Insight Global", "Vaco", "Akkodis", "Randstad",
              "Apex Systems", "Collabera", "Motion Recruitment", "The Judge Group", "Experis", "iCIMS", "Indeed"],
 };
@@ -71,6 +73,17 @@ async function openSettings() {
   $("#settingsMinScore").value = cfg.minFitScore ?? 62;
   $("#settingsHighThresh").value = cfg.priorityThresholds?.high ?? 80;
   $("#settingsMediumThresh").value = cfg.priorityThresholds?.medium ?? 68;
+  $("#settingsMaxExperience").value = cfg.maxRequiredExperienceYears ?? 0;
+  $("#settingsMinHourlyPay").value = cfg.minimumHourlyPay ?? 0;
+  $("#settingsMinAnnualPay").value = cfg.minimumAnnualPay ?? 0;
+  $("#settingsBaseResumePath").value = cfg.baseResumePath || "";
+  $("#settingsBaseResumeFile").value = "";
+  $("#settingsBaseResumeStatus").textContent = cfg.baseResumePath
+    ? `Current base resume: ${fileName(cfg.baseResumePath)}`
+    : "Resume match scores will be calculated from the uploaded file.";
+  $("#settingsSearchDepth").value = cfg.searchDepth ?? 2;
+  $("#settingsSearchConcurrency").value = cfg.searchConcurrency ?? 64;
+  $("#settingsSearchTimeout").value = cfg.searchTimeoutSeconds ?? 7;
   $("#settingsRemoteBoost").checked = cfg.remoteBoost !== false;
   const enabledSet = new Set(cfg.enabledSources || ALL_SOURCES);
   renderSourceCheckboxes(enabledSet);
@@ -80,6 +93,8 @@ async function openSettings() {
 async function saveSettings() {
   const splitLines = (val) => val.split("\n").map((s) => s.trim()).filter(Boolean);
   const splitCommas = (val) => val.split(",").map((s) => s.trim()).filter(Boolean);
+  const fileInput = $("#settingsBaseResumeFile");
+  let baseResumePath = $("#settingsBaseResumePath").value.trim();
   const payload = {
     jobTitles: splitLines($("#settingsTitles").value),
     mustHaveSkills: splitCommas($("#settingsMustHave").value),
@@ -91,12 +106,26 @@ async function saveSettings() {
       medium: Number($("#settingsMediumThresh").value) || 68,
     },
     remoteBoost: $("#settingsRemoteBoost").checked,
+    maxRequiredExperienceYears: Number($("#settingsMaxExperience").value) || 0,
+    minimumHourlyPay: Number($("#settingsMinHourlyPay").value) || 0,
+    minimumAnnualPay: Number($("#settingsMinAnnualPay").value) || 0,
+    baseResumePath,
+    searchDepth: Number($("#settingsSearchDepth").value) || 2,
+    searchConcurrency: Number($("#settingsSearchConcurrency").value) || 64,
+    searchTimeoutSeconds: Number($("#settingsSearchTimeout").value) || 7,
+    excludedTitlePatterns: appConfig.excludedTitlePatterns || ["manager", "principal engineer"],
     enabledSources: getCheckedSources(),
   };
   try {
-    await api("/api/app-config", { method: "POST", body: JSON.stringify(payload) });
-    appConfig = payload;
-    DAILY_TARGET = payload.dailyTarget;
+    if (fileInput?.files?.length) {
+      $("#settingsBaseResumeStatus").textContent = "Uploading base resume...";
+      const upload = await uploadBaseResume(fileInput.files[0]);
+      payload.baseResumePath = upload.baseResumePath;
+      $("#settingsBaseResumePath").value = upload.baseResumePath;
+    }
+    const saved = await api("/api/app-config", { method: "POST", body: JSON.stringify(payload) });
+    appConfig = saved.config || payload;
+    DAILY_TARGET = appConfig.dailyTarget;
     $("#settingsDialog").close();
     toast("✓ Settings saved — roadmap updated");
     renderAll();
@@ -106,6 +135,18 @@ async function saveSettings() {
   } catch (err) {
     toast(`Failed to save settings: ${err.message}`);
   }
+}
+
+async function uploadBaseResume(file) {
+  if (!file.name.toLowerCase().endsWith(".docx")) {
+    throw new Error("Please upload a .docx resume file.");
+  }
+  const form = new FormData();
+  form.append("baseResume", file);
+  const response = await fetch("/api/base-resume", { method: "POST", body: form });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || "Upload failed");
+  return body;
 }
 
 const $ = (selector) => document.querySelector(selector);
@@ -219,6 +260,21 @@ function fileName(value) {
 
 function resumeForJob(job) {
   return job.resumeUsedPath || job.generatedResumePath || job.selectedResume || "";
+}
+
+function resumeMatchDisplay(job) {
+  const score = job.resumeMatchScore;
+  const total = Number(job.resumeJobSkillCount || 0);
+  const matched = Number(job.resumeMatchedSkillCount || 0);
+  if (score === null || score === undefined || !total) {
+    return `<span class="pill medium" title="Upload a base resume and make sure this job has skill text or JD details">N/A</span>`;
+  }
+  const cls = Number(score) >= 75 ? "high" : Number(score) >= 45 ? "medium" : "";
+  const matchedSkills = (job.resumeMatchedSkills || []).join(", ");
+  const jobSkills = (job.resumeJobSkills || []).join(", ");
+  const title = `${matched}/${total} job skills found in base resume${matchedSkills ? `: ${matchedSkills}` : ""}${jobSkills ? ` | Job skills: ${jobSkills}` : ""}`;
+  return `<span class="pill ${cls}" title="${escapeHtml(title)}">${escapeHtml(score)}%</span>
+    <div class="tiny">${escapeHtml(matched)}/${escapeHtml(total)} skills</div>`;
 }
 
 function resumeLabelForJob(job) {
@@ -567,7 +623,13 @@ function renderDateSummary() {
   }
   $("#dayStatus").textContent = statusText;
 
-  const autoNote = state.autoRefreshAt ? `Auto: ${formatTime(state.autoRefreshAt)}` : "Auto-refresh: hourly";
+  const autoNote = state.autoRefreshRunning
+    ? "Auto-refresh: running"
+    : state.autoRefreshNextAt
+      ? `Next auto-refresh: ${formatTime(state.autoRefreshNextAt)}`
+      : state.autoRefreshAt
+        ? `Last auto-refresh: ${formatTime(state.autoRefreshAt)}`
+        : "Auto-refresh: hourly";
   $("#refreshStatus").textContent = `Last manual search: ${formatTime(state.lastRefreshAt)} · ${autoNote}`;
 }
 
@@ -648,7 +710,7 @@ function renderRows() {
   const jobs = filteredJobs();
   if (!jobs.some((job) => job.id === state.selectedId)) state.selectedId = jobs[0]?.id || null;
   if (!jobs.length) {
-    jobRows.innerHTML = `<tr><td colspan="8"><div class="empty-state">No ${escapeHtml(viewLabel())} with the current filters.</div></td></tr>`;
+    jobRows.innerHTML = `<tr><td colspan="9"><div class="empty-state">No ${escapeHtml(viewLabel())} with the current filters.</div></td></tr>`;
     renderDetail();
     renderBulkBar();
     return;
@@ -660,6 +722,7 @@ function renderRows() {
       const resume = resumeForJob(job);
       const hasJd = Boolean(job.jd || job.jdPath || job.notes);
       const checked = state.bulkSelected.has(job.id) ? "checked" : "";
+      const resumeMatch = resumeMatchDisplay(job);
       return `<tr class="${selected}" data-id="${escapeHtml(job.id)}">
         <td class="checkbox-cell" onclick="event.stopPropagation()">
           <input type="checkbox" class="row-check" data-check="${escapeHtml(job.id)}" ${checked} />
@@ -672,6 +735,7 @@ function renderRows() {
         <td><span class="pill">${escapeHtml(job.source || "Portal")}</span></td>
         <td>${escapeHtml(job.pay || "Not listed")}</td>
         <td><span class="pill ${Number(job.fitScore) >= 80 ? "high" : Number(job.fitScore) >= 65 ? "medium" : ""}">${escapeHtml(job.fitScore || "-")}</span></td>
+        <td>${resumeMatch}</td>
         <td><span class="pill ${pillClass}">${escapeHtml(job.status || "Ready")}</span></td>
         <td>
           <div class="resume-cell">
@@ -737,6 +801,7 @@ function renderDetail() {
       <div class="prep-grid">
         <div class="prep-item"><strong>Applied</strong><span>${escapeHtml(appliedDate)}</span></div>
         <div class="prep-item"><strong>Resume Used</strong><span>${escapeHtml(fileName(resume))}</span></div>
+        <div class="prep-item"><strong>Resume Match</strong><span>${job.resumeMatchScore === null || job.resumeMatchScore === undefined ? "N/A" : `${escapeHtml(job.resumeMatchScore)}% (${escapeHtml(job.resumeMatchedSkillCount || 0)}/${escapeHtml(job.resumeJobSkillCount || 0)} skills)`}</span></div>
         <div class="prep-item"><strong>Resume Path</strong><span>${escapeHtml(resume || "Generate or select resume before applying")}</span></div>
         <div class="prep-item"><strong>JD</strong><span>${escapeHtml(jdStatus)}</span></div>
         <div class="prep-item"><strong>Job Link</strong><span>${escapeHtml(sourceLink)}</span></div>
@@ -753,8 +818,9 @@ function renderDetail() {
         ${["", "Applied", "Phone Screen", "Interview", "Final Round", "Offer", "Rejected", "Withdrawn"].map((v) => `<option value="${escapeHtml(v)}" ${pipeline === v ? "selected" : ""}>${escapeHtml(v) || "— none —"}</option>`).join("")}
       </select></div>
       <div class="field"><label>Resume Version</label><select id="resumeInput" class="select">
-        ${["Pavan_Konatham_NET_Azure_Angular.docx","Pavan_Konatham_NET_AWS_React.docx","Pavan_Konatham_NET_Azure_AgenticAI.docx"]
-          .map((v) => `<option ${job.selectedResume === v ? "selected" : ""}>${v}</option>`).join("")}
+        ${[job.selectedResume, appConfig.defaultResume].filter(Boolean).filter((v, i, all) => all.indexOf(v) === i)
+          .map((v) => `<option ${job.selectedResume === v ? "selected" : ""}>${escapeHtml(v)}</option>`).join("")}
+        <option value="" ${job.selectedResume ? "" : "selected"}>Generate a tailored resume</option>
       </select></div>
       <div class="field"><label>Interview Date</label><input id="interviewDateInput" class="input" type="date" value="${escapeHtml(job.interviewDate || "")}" /></div>
       <div class="field"><label>Follow-up Date</label><input id="followUpDateInput" class="input" type="date" value="${escapeHtml(job.followUpDate || "")}" /></div>
@@ -1212,7 +1278,9 @@ function exportCsv() {
   const jobs = filteredJobs();
   const headers = [
     "ID", "DateFound", "DateApplied", "Company", "Role", "Source", "URL",
-    "Location", "WorkMode", "Pay", "FitScore", "Status", "Priority",
+    "Location", "WorkMode", "Pay", "FitScore", "ResumeMatchScore",
+    "ResumeMatchedSkillCount", "ResumeJobSkillCount", "ResumeMatchedSkills",
+    "Status", "Priority",
     "PipelineStage", "InterviewDate", "FollowUpDate",
     "RecruiterName", "RecruiterEmail", "RecruiterPhone",
     "WorkAuthRisk", "Notes",
@@ -1222,7 +1290,9 @@ function exportCsv() {
     headers.join(","),
     ...jobs.map((job) => [
       job.id, job.dateFound, job.dateApplied, job.company, job.role, job.source, job.url,
-      job.location, job.workMode, job.pay, job.fitScore, job.status, job.priority,
+      job.location, job.workMode, job.pay, job.fitScore, job.resumeMatchScore,
+      job.resumeMatchedSkillCount, job.resumeJobSkillCount, (job.resumeMatchedSkills || []).join("; "),
+      job.status, job.priority,
       job.pipelineStage, job.interviewDate, job.followUpDate,
       job.recruiterName, job.recruiterEmail, job.recruiterPhone,
       job.workAuthRisk, job.notes,
@@ -1321,12 +1391,15 @@ async function load() {
 
 async function pollAutoRefresh() {
   try {
-    const { at, added } = await api("/api/auto-refresh-status");
+    const { at, added, nextAt, running } = await api("/api/auto-refresh-status");
+    state.autoRefreshNextAt = nextAt || null;
+    state.autoRefreshRunning = Boolean(running);
     if (at && at !== state.autoRefreshAt) {
       state.autoRefreshAt = at;
       await load();
       if (added > 0) toast(`Auto-refresh: ${added} new job${added === 1 ? "" : "s"} added`);
     }
+    renderDateSummary();
   } catch (_) {}
 }
 
@@ -1339,12 +1412,13 @@ async function refreshCsv() {
     const result = await api("/api/find-jobs", { method: "POST" });
     state.lastRefreshAt = new Date().toISOString();
     const activeSources = Object.values(result.sourceBreakdown || {}).filter((count) => count > 0).length;
+    const searchedSources = Number(result.sourcesSearched || Object.keys(result.sourceBreakdown || {}).length);
     const added = Number(result.added || 0);
     const dupes = Number(result.duplicatesSkipped || 0);
     if (added > 0) {
-      toast(`✓ ${added} new job${added === 1 ? "" : "s"} added from ${activeSources} source${activeSources === 1 ? "" : "s"}`);
+      toast(`Searched ${searchedSources} portals; added ${added} new job${added === 1 ? "" : "s"} from ${activeSources}`);
     } else {
-      toast(`Search done — ${dupes} duplicate${dupes === 1 ? "" : "s"} skipped, no new jobs`);
+      toast(`Searched ${searchedSources} portals; ${dupes} duplicate${dupes === 1 ? "" : "s"} skipped, no new jobs`);
     }
     await load();
   } catch (error) {
@@ -1648,6 +1722,7 @@ function setupEvents() {
 
 setupEvents();
 load().catch((error) => toast(error.message));
+pollAutoRefresh();
 
 // ── Panel resize ───────────────────────────────────────────────────────────────
 (function initPanelResize() {

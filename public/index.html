@@ -90,6 +90,7 @@
                   <th>Portal</th>
                   <th>Pay</th>
                   <th>Score</th>
+                  <th>Resume Match</th>
                   <th>Status</th>
                   <th>Resume / JD</th>
                   <th>Actions</th>
@@ -132,7 +133,6 @@
             <button class="chat-chip" type="button" data-chat-prompt="search Dice portal">Dice</button>
             <button class="chat-chip" type="button" data-chat-prompt="search LinkedIn portal">LinkedIn</button>
             <button class="chat-chip" type="button" data-chat-prompt="search Wellfound portal">Wellfound</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search Glassdoor portal">Glassdoor</button>
             <button class="chat-chip" type="button" data-chat-prompt="search College Recruiter portal">College Recruiter</button>
             <button class="chat-chip" type="button" data-chat-prompt="search The Forage portal">The Forage</button>
             <button class="chat-chip" type="button" data-chat-prompt="search WayUp portal">WayUp</button>
@@ -239,6 +239,46 @@
           </div>
         </div>
 
+        <div class="settings-row">
+          <div class="settings-section half">
+            <label class="settings-label">Maximum Required Experience <span class="settings-hint">(0 = no limit)</span></label>
+            <input id="settingsMaxExperience" class="input" type="number" min="0" max="60" />
+          </div>
+          <div class="settings-section half">
+            <label class="settings-label">Upload Base Resume <span class="settings-hint">(.docx)</span></label>
+            <input id="settingsBaseResumeFile" class="input" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <input id="settingsBaseResumePath" class="input" placeholder="No base resume uploaded yet" readonly style="margin-top:8px" />
+            <div id="settingsBaseResumeStatus" class="settings-hint" style="margin-top:6px">Resume match scores will be calculated from the uploaded file.</div>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-section half">
+            <label class="settings-label">Minimum Hourly Pay <span class="settings-hint">(0 = no limit)</span></label>
+            <input id="settingsMinHourlyPay" class="input" type="number" min="0" />
+          </div>
+          <div class="settings-section half">
+            <label class="settings-label">Minimum Annual Pay <span class="settings-hint">(0 = no limit)</span></label>
+            <input id="settingsMinAnnualPay" class="input" type="number" min="0" step="1000" />
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-section half">
+            <label class="settings-label">Search Depth <span class="settings-hint">(1 fast, 2 more coverage, 3 maximum)</span></label>
+            <input id="settingsSearchDepth" class="input" type="number" min="1" max="3" />
+          </div>
+          <div class="settings-section half">
+            <label class="settings-label">Concurrent Requests <span class="settings-hint">(8-96)</span></label>
+            <input id="settingsSearchConcurrency" class="input" type="number" min="8" max="96" />
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <label class="settings-label">Request Timeout Seconds <span class="settings-hint">(4-20; lower fails faster)</span></label>
+          <input id="settingsSearchTimeout" class="input" type="number" min="4" max="20" />
+        </div>
+
         <div class="settings-section">
           <label class="settings-checkbox-label">
             <input id="settingsRemoteBoost" type="checkbox" />
@@ -277,7 +317,7 @@
       </div>
     </dialog>
 
-    <script src="/app.js?v=1781188192"></script>
+    <script src="/app.js?v=1781309200"></script>
     <!-- Skill concept modal -->
   <div id="skillModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);overflow-y:auto">
     <div id="skillModalInner" style="max-width:860px;margin:32px auto;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)">

@@ -2,39 +2,32 @@
   "jobTitles": [
     "Software Engineer",
     ".NET Developer",
-    "Full Stack Developer",
-    "Backend Developer",
-    "C# Developer",
-    ".NET Developer AI"
+    "Full Stack .NET Developer",
+    "Backend Engineer",
+    "C# Developer"
   ],
   "mustHaveSkills": [
     "C#",
     ".NET",
-    "ASP.NET",
-    "Azure",
-    "Git",
-    "SQL",
+    "ASP.NET Core",
     "REST API",
-    "OOP",
     "SQL Server",
+    "OOP",
+    "SQL",
+    "Git",
     "JavaScript",
     "HTML",
     "CSS",
-    "Node.js",
-    "ASP.NET Core",
     "Data Structures"
   ],
   "niceToHaveSkills": [
-    "Angular",
-    "React",
-    "SQL",
+    "Azure",
     "Docker",
     "TypeScript",
-    "Azure DevOps",
-    "REST API",
-    "Microservices",
-    "Azure",
+    "Angular",
+    "React",
     "Redis",
+    "Microservices",
     "ASP.NET",
     "Entity Framework",
     "Node.js",
@@ -47,13 +40,23 @@
     "medium": 68
   },
   "remoteBoost": true,
+  "maxRequiredExperienceYears": 0,
+  "minimumHourlyPay": 0,
+  "minimumAnnualPay": 0,
+  "baseResumePath": "",
+  "searchDepth": 2,
+  "searchConcurrency": 64,
+  "searchTimeoutSeconds": 7,
+  "excludedTitlePatterns": [
+    "manager",
+    "principal engineer"
+  ],
   "enabledSources": [
     "Dice",
     "LinkedIn",
     "BuiltIn",
     "Remotive",
     "Jobicy",
-    "Himalayas",
     "The Muse",
     "Infosys Careers",
     "Greenhouse",
@@ -61,7 +64,6 @@
     "SmartRecruiters",
     "Ashby",
     "Workday",
-    "Glassdoor",
     "Wellfound",
     "Kforce",
     "TEKsystems",
@@ -77,5 +79,6 @@
     "Experis",
     "iCIMS",
     "Indeed"
-  ]
+  ],
+  "defaultResume": ""
 }

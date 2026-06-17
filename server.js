@@ -14,6 +14,8 @@ const JOBS_PATH = path.join(DATA_DIR, "jobs.json");
 const ACTIVITY_PATH = path.join(DATA_DIR, "activity.json");
 const CONFIG_PATH = path.join(ROOT, "config.local.json");
 const APP_SETTINGS_PATH = path.join(ROOT, "config.json");
+const LAST_FINDER_REFRESH_PATH = path.join(ROOT, "logs", "last_refresh.txt");
+const LAST_AUTO_REFRESH_PATH = path.join(ROOT, "logs", "last_auto_refresh.txt");
 
 function readConfig() {
   if (!fs.existsSync(CONFIG_PATH)) return {};
@@ -36,7 +38,44 @@ const CSV_SOURCE = resolvePath(
   process.env.JOB_TRACKER_CSV || CONFIG.trackerCsv,
   path.join(APP_ROOT, "tracker", "job_tracker.csv")
 );
+const BASE_RESUME_DIR = path.join(APP_ROOT, "resume", "base resume");
 const PYTHON_EXE = process.env.PYTHON_EXE || CONFIG.pythonExe || (process.platform === "win32" ? "python" : "python3");
+
+const RESUME_MATCH_SKILLS = [
+  "Python", "Java", "JavaScript", "TypeScript", "C#", ".NET", "ASP.NET Core",
+  "Node.js", "React", "Angular", "HTML", "CSS", "SQL", "SQL Server",
+  "PostgreSQL", "MySQL", "MongoDB", "Redis", "REST API", "GraphQL",
+  "FastAPI", "Django", "Flask", "Spring Boot", "Express", "OOP",
+  "Data Structures", "System Design", "Microservices", "Machine Learning",
+  "Deep Learning", "NLP", "LLM", "RAG", "Prompt Engineering", "OpenAI",
+  "LangChain", "Vector Databases", "Embeddings", "Pandas", "NumPy",
+  "Scikit-learn", "PyTorch", "TensorFlow", "MLflow", "Statistics",
+  "Data Analysis", "Data Modeling", "ETL", "Spark", "Airflow", "dbt",
+  "Snowflake", "BigQuery", "Databricks", "Power BI", "Tableau", "Excel",
+  "AWS", "Azure", "GCP", "Cloud", "Docker", "Kubernetes", "Terraform",
+  "CI/CD", "Azure DevOps", "GitHub Actions", "Linux", "Bash", "Monitoring",
+  "Selenium", "Playwright", "Cypress", "Testing", "API Testing",
+  "Security", "OWASP", "SIEM", "Cloud Security", "Networking",
+  "Salesforce", "CRM", "Apex", "SOQL", "Lightning", "Figma", "UX Design",
+  "User Research", "Wireframing", "Prototyping", "Agile", "Scrum", "Jira",
+  "Stakeholder Management", "Communication", "Documentation",
+];
+
+const SKILL_ALIASES = {
+  "C#": ["c#", "c sharp", "csharp"],
+  ".NET": [".net", "dotnet"],
+  "ASP.NET Core": ["asp.net core", "asp.net", "aspnet"],
+  "Node.js": ["node.js", "nodejs", "node js"],
+  "REST API": ["rest api", "restful api", "rest apis", "api development"],
+  "CI/CD": ["ci/cd", "cicd", "continuous integration", "continuous deployment"],
+  "GitHub Actions": ["github actions"],
+  "Azure DevOps": ["azure devops"],
+  "Power BI": ["power bi", "powerbi"],
+  "Scikit-learn": ["scikit-learn", "sklearn"],
+  "Vector Databases": ["vector database", "vector databases", "vector db"],
+};
+
+let resumeSkillCache = { key: "", skills: [] };
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -54,10 +93,8 @@ const PORTAL_OPTIONS = [
   { value: "builtin", label: "BuiltIn", tokens: ["builtin", "built in"] },
   { value: "remotive", label: "Remotive", tokens: ["remotive"] },
   { value: "jobicy", label: "Jobicy", tokens: ["jobicy"] },
-  { value: "himalayas", label: "Himalayas", tokens: ["himalayas"] },
   { value: "the muse", label: "The Muse", tokens: ["the muse", "muse"] },
   { value: "wellfound", label: "Wellfound", tokens: ["wellfound", "wellfound.com"] },
-  { value: "glassdoor", label: "Glassdoor", tokens: ["glassdoor", "glassdoor.com"] },
   { value: "college recruiter", label: "College Recruiter", tokens: ["college recruiter", "collegerecruiter", "collegerecruiter.com"] },
   { value: "the forage", label: "The Forage", tokens: ["the forage", "forage", "theforage", "theforage.com"] },
   { value: "wayup", label: "WayUp", tokens: ["wayup", "wayup.com"] },
@@ -86,6 +123,25 @@ const PORTAL_OPTIONS = [
 
 let autoRefreshAt = null;
 let autoRefreshAdded = 0;
+let autoRefreshNextAt = null;
+let autoRefreshRunning = false;
+let autoRefreshError = "";
+let autoRefreshTimer = null;
+const AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+
+function readIsoTimestamp(filePath) {
+  try {
+    const value = fs.readFileSync(filePath, "utf8").trim();
+    return Number.isNaN(Date.parse(value)) ? null : new Date(value).toISOString();
+  } catch {
+    return null;
+  }
+}
+
+async function saveAutoRefreshTimestamp(value) {
+  await fsp.mkdir(path.dirname(LAST_AUTO_REFRESH_PATH), { recursive: true });
+  await fsp.writeFile(LAST_AUTO_REFRESH_PATH, value, "utf8");
+}
 
 
 function today() {
@@ -134,12 +190,12 @@ function looksLikeJobDescription(message) {
     "requirements",
     "qualifications",
     "experience in",
-    ".net",
-    "c#",
-    "angular",
-    "developer",
-    "engineer",
-    "microservices",
+    "preferred qualifications",
+    "minimum qualifications",
+    "about the role",
+    "what you will do",
+    "what you'll do",
+    "skills",
   ];
   return text.length > 120 && jdSignals.filter((signal) => text.includes(signal)).length >= 2;
 }
@@ -163,11 +219,15 @@ function inferRoleFromJd(message) {
     .split(/\r?\n/)
     .map((line) => line.replace(/^[\s\-*•\d.]+/, "").trim())
     .filter(Boolean);
-  const roleLine = lines.find((line) => /\b(developer|engineer|architect|lead|analyst|consultant)\b/i.test(line) && line.length < 100);
+  const configuredTitles = readAppSettings().jobTitles || [];
+  const configuredRole = configuredTitles.find((title) => text.toLowerCase().includes(String(title).toLowerCase()));
+  if (configuredRole) return configuredRole;
+  const roleLine = lines.find((line) =>
+    /\b(accountant|administrator|analyst|architect|assistant|chef|consultant|coordinator|designer|developer|director|driver|engineer|manager|mechanic|nurse|operator|pharmacist|recruiter|scientist|specialist|technician|therapist|writer)\b/i.test(line)
+    && line.length < 100
+  );
   if (roleLine) return roleLine;
-  if (/angular/i.test(text) && /\.net|c#/i.test(text)) return "Senior Full Stack .NET Developer";
-  if (/\.net|c#/i.test(text)) return ".NET Developer";
-  return "Software Developer";
+  return configuredTitles[0] || "Job";
 }
 
 function inferCompanyFromJd(message) {
@@ -227,14 +287,19 @@ async function createAppliedJobFromJd(message) {
 }
 
 function sourceSummary(result) {
+  const sourcesSearched = Number(result.sourcesSearched || Object.keys(result.sourceBreakdown || {}).length);
+  const sourcesWithMatches = Number(
+    result.sourcesWithMatches ||
+    Object.values(result.sourceBreakdown || {}).filter((count) => Number(count) > 0).length
+  );
   const activeSources = Object.entries(result.sourceBreakdown || {})
     .filter(([, count]) => Number(count) > 0)
     .sort((a, b) => Number(b[1]) - Number(a[1]))
     .slice(0, 5)
     .map(([source, count]) => `${source}: ${count}`)
     .join(", ");
-  const searched = Number(result.requestsSearched || 0);
-  return activeSources || `${searched} source request${searched === 1 ? "" : "s"} searched`;
+  const coverage = `${sourcesSearched} portal${sourcesSearched === 1 ? "" : "s"} searched; ${sourcesWithMatches} returned matching jobs`;
+  return activeSources ? `${coverage}. Top results: ${activeSources}` : coverage;
 }
 
 function chatReply(label, result) {
@@ -262,6 +327,50 @@ async function readBody(req) {
   for await (const chunk of req) chunks.push(chunk);
   const raw = Buffer.concat(chunks).toString("utf8");
   return raw ? JSON.parse(raw) : {};
+}
+
+async function readRawBody(req, maxBytes = 12 * 1024 * 1024) {
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > maxBytes) throw new Error("Upload is too large. Please use a resume under 12 MB.");
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+function sanitizeUploadName(name) {
+  const base = path.basename(String(name || "base_resume.docx"));
+  const cleaned = base.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+  return cleaned || "base_resume.docx";
+}
+
+function parseMultipartFile(buffer, contentType, fieldName) {
+  const match = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType || "");
+  if (!match) throw new Error("Invalid upload request");
+  const boundary = Buffer.from(`--${match[1] || match[2]}`, "utf8");
+  let cursor = 0;
+  while (cursor < buffer.length) {
+    const start = buffer.indexOf(boundary, cursor);
+    if (start < 0) break;
+    const next = buffer.indexOf(boundary, start + boundary.length);
+    if (next < 0) break;
+    let part = buffer.slice(start + boundary.length, next);
+    if (part.slice(0, 2).equals(Buffer.from("\r\n"))) part = part.slice(2);
+    if (part.slice(-2).equals(Buffer.from("\r\n"))) part = part.slice(0, -2);
+    const headerEnd = part.indexOf(Buffer.from("\r\n\r\n"));
+    if (headerEnd > 0) {
+      const header = part.slice(0, headerEnd).toString("utf8");
+      const data = part.slice(headerEnd + 4);
+      const disposition = /content-disposition:[^\r\n]+/i.exec(header)?.[0] || "";
+      const name = /name="([^"]+)"/i.exec(disposition)?.[1] || "";
+      const filename = /filename="([^"]*)"/i.exec(disposition)?.[1] || "";
+      if (name === fieldName && filename) return { filename, data };
+    }
+    cursor = next;
+  }
+  throw new Error("Choose a .docx file to upload.");
 }
 
 async function ensureData() {
@@ -421,11 +530,175 @@ function isAppliedStatus(status) {
 }
 
 function pickResume(job) {
-  const haystack = `${job.role || ""} ${job.notes || ""} ${job.jd || ""}`.toLowerCase();
-  if (/(azure openai|ai|rag|genai|agent|machine learning|ml)/.test(haystack)) {
-    return "Candidate_FullStack_NET_Cloud_AI.docx";
+  return readAppSettings().defaultResume || "";
+}
+
+function readAppSettings() {
+  try {
+    return fs.existsSync(APP_SETTINGS_PATH) ? JSON.parse(fs.readFileSync(APP_SETTINGS_PATH, "utf8")) : {};
+  } catch {
+    return {};
   }
-  return "Candidate_FullStack_NET_Cloud.docx";
+}
+
+function normalizeAppSettings(settings) {
+  const next = { ...(settings || {}) };
+  const baseResumePath = String(next.baseResumePath || "").trim();
+  if (baseResumePath) {
+    const resolved = path.resolve(baseResumePath);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`Base resume file not found: ${resolved}`);
+    }
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile() || path.extname(resolved).toLowerCase() !== ".docx") {
+      throw new Error("Base resume must be an existing .docx file");
+    }
+    next.baseResumePath = resolved;
+    next.defaultResume = path.basename(resolved);
+  } else {
+    next.baseResumePath = "";
+    next.defaultResume = String(next.defaultResume || "");
+  }
+  return next;
+}
+
+function skillRegex(term) {
+  const escaped = String(term).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9+#.])${escaped}($|[^a-z0-9+#.])`, "i");
+}
+
+function textHasSkill(text, skill) {
+  const aliases = SKILL_ALIASES[skill] || [skill];
+  return aliases.some((term) => skillRegex(term).test(text));
+}
+
+function jobSkillText(job) {
+  return [
+    job.role,
+    job.company,
+    job.source,
+    job.location,
+    job.employmentType,
+    job.workMode,
+    job.notes,
+    job.jd,
+    job.workAuthRisk,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function configuredSkills() {
+  const settings = readAppSettings();
+  return [
+    ...(settings.mustHaveSkills || []),
+    ...(settings.niceToHaveSkills || []),
+  ].map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function allMatchSkills() {
+  const seen = new Set();
+  return [...RESUME_MATCH_SKILLS, ...configuredSkills()].filter((skill) => {
+    const key = skill.toLowerCase();
+    if (!skill || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function extractJobSkills(job) {
+  const blob = jobSkillText(job);
+  return allMatchSkills().filter((skill) => textHasSkill(blob, skill));
+}
+
+function runResumeSkillExtractor(baseResumePath) {
+  return new Promise((resolve, reject) => {
+    const extras = JSON.stringify(configuredSkills());
+    const child = spawn(PYTHON_EXE, [path.join(ROOT, "tools", "extract_resume_skills.py"), baseResumePath, extras], {
+      cwd: ROOT,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr || stdout || `Resume skill extractor exited with ${code}`));
+      } else {
+        try {
+          resolve(JSON.parse(stdout).skills || []);
+        } catch {
+          reject(new Error(`Resume skill extractor returned invalid JSON: ${stdout}`));
+        }
+      }
+    });
+  });
+}
+
+async function getResumeSkills() {
+  const settings = readAppSettings();
+  const baseResumePath = settings.baseResumePath || "";
+  if (!baseResumePath || !fs.existsSync(baseResumePath)) return [];
+  const stat = await fsp.stat(baseResumePath);
+  const key = `${baseResumePath}:${stat.mtimeMs}:${configuredSkills().join("|")}`;
+  if (resumeSkillCache.key === key) return resumeSkillCache.skills;
+  const skills = await runResumeSkillExtractor(baseResumePath);
+  resumeSkillCache = { key, skills };
+  return skills;
+}
+
+function withResumeMatch(job, resumeSkills) {
+  const resumeSet = new Set((resumeSkills || []).map((skill) => String(skill).toLowerCase()));
+  const jobSkills = extractJobSkills(job);
+  const matched = jobSkills.filter((skill) => resumeSet.has(skill.toLowerCase()));
+  const score = jobSkills.length ? Math.round((matched.length / jobSkills.length) * 100) : null;
+  return {
+    ...job,
+    resumeMatchScore: score,
+    resumeMatchedSkills: matched,
+    resumeJobSkills: jobSkills,
+    resumeMatchedSkillCount: matched.length,
+    resumeJobSkillCount: jobSkills.length,
+  };
+}
+
+async function loadJobsWithResumeMatch() {
+  const jobs = await loadJobs();
+  try {
+    const settings = readAppSettings();
+    if (!settings.baseResumePath || !fs.existsSync(settings.baseResumePath)) {
+      return jobs.map((job) => ({
+        ...job,
+        resumeMatchScore: null,
+        resumeMatchedSkills: [],
+        resumeJobSkills: extractJobSkills(job),
+        resumeMatchedSkillCount: 0,
+        resumeJobSkillCount: extractJobSkills(job).length,
+      }));
+    }
+    const resumeSkills = await getResumeSkills();
+    if (!resumeSkills.length) {
+      return jobs.map((job) => ({
+        ...job,
+        resumeMatchScore: null,
+        resumeMatchedSkills: [],
+        resumeJobSkills: extractJobSkills(job),
+        resumeMatchedSkillCount: 0,
+        resumeJobSkillCount: extractJobSkills(job).length,
+      }));
+    }
+    return jobs.map((job) => withResumeMatch(job, resumeSkills));
+  } catch (error) {
+    console.warn(`Could not compute resume match scores: ${error.message}`);
+    return jobs.map((job) => ({
+      ...job,
+      resumeMatchScore: null,
+      resumeMatchedSkills: [],
+      resumeJobSkills: [],
+      resumeMatchedSkillCount: 0,
+      resumeJobSkillCount: 0,
+    }));
+  }
 }
 
 function cleanTextKey(value) {
@@ -467,6 +740,9 @@ async function mergeCsvJobs() {
   for (const job of incoming) {
     const existing = byId.get(job.id) || byKey.get(jobDedupeKey(job));
     if (existing) {
+      if (isAppliedStatus(existing.status) || existing.dateApplied) {
+        continue;
+      }
       Object.assign(existing, {
         ...job,
         id: existing.id,
@@ -579,7 +855,7 @@ async function updateJob(id, patch) {
 
 async function handleApi(req, res, pathname) {
   if (req.method === "GET" && pathname === "/api/jobs") {
-    return sendJson(res, 200, { jobs: await loadJobs() });
+    return sendJson(res, 200, { jobs: await loadJobsWithResumeMatch() });
   }
 
   if (req.method === "GET" && pathname === "/api/activity") {
@@ -665,7 +941,7 @@ async function handleApi(req, res, pathname) {
     const portal = inferPortal(message);
     if (!portal) {
       return sendJson(res, 200, {
-        reply: "Pick a portal or use a quick search chip. I can search Infosys, Dice, LinkedIn, Wellfound, Glassdoor, College Recruiter, The Forage, WayUp, Kforce, Vaco, Insight Global, Capgemini, Workday, Greenhouse, and more.",
+        reply: "Pick a portal or use a quick search chip. I can search Infosys, Dice, LinkedIn, Wellfound, Kforce, Vaco, Insight Global, Capgemini, Workday, Greenhouse, and more.",
         action: "need_portal",
       });
     }
@@ -686,24 +962,42 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === "GET" && pathname === "/api/auto-refresh-status") {
-    return sendJson(res, 200, { at: autoRefreshAt, added: autoRefreshAdded });
+    const cutoffAt = autoRefreshAt || readIsoTimestamp(LAST_FINDER_REFRESH_PATH);
+    return sendJson(res, 200, {
+      at: autoRefreshAt,
+      added: autoRefreshAdded,
+      nextAt: autoRefreshNextAt,
+      cutoffAt,
+      running: autoRefreshRunning,
+      error: autoRefreshError,
+      intervalMinutes: AUTO_REFRESH_INTERVAL_MS / 60000,
+    });
   }
 
   if (req.method === "GET" && pathname === "/api/app-config") {
     const ALL_SOURCES = [
-      "Dice", "LinkedIn", "BuiltIn", "Remotive", "Jobicy", "Himalayas", "The Muse", "Infosys Careers",
-      "Greenhouse", "Lever", "SmartRecruiters", "Ashby", "Workday", "Glassdoor", "Wellfound",
+      "Dice", "LinkedIn", "BuiltIn", "Remotive", "Jobicy", "The Muse", "Infosys Careers",
+      "Greenhouse", "Lever", "SmartRecruiters", "Ashby", "Workday", "Wellfound",
       "Kforce", "TEKsystems", "Robert Half", "Insight Global", "Vaco", "Akkodis", "Randstad",
       "Apex Systems", "Collabera", "Motion Recruitment", "The Judge Group", "Experis", "iCIMS", "Indeed",
     ];
     const defaults = {
-      jobTitles: ["Software Engineer", ".NET Developer", "Full Stack Developer", "Backend Developer", "C# Developer"],
-      mustHaveSkills: ["C#", ".NET", "ASP.NET", "Azure"],
-      niceToHaveSkills: ["Angular", "React", "SQL", "Docker", "TypeScript", "Azure DevOps", "REST API", "Microservices"],
+      jobTitles: ["Software Engineer"],
+      mustHaveSkills: [],
+      niceToHaveSkills: [],
       remoteBoost: true,
       dailyTarget: 50,
       priorityThresholds: { high: 80, medium: 68 },
       minFitScore: 62,
+      maxRequiredExperienceYears: 0,
+      minimumHourlyPay: 0,
+      minimumAnnualPay: 0,
+      baseResumePath: "",
+      defaultResume: "",
+      searchDepth: 2,
+      searchConcurrency: 64,
+      searchTimeoutSeconds: 7,
+      excludedTitlePatterns: ["manager", "principal engineer"],
       enabledSources: ALL_SOURCES,
     };
     try {
@@ -714,16 +1008,52 @@ async function handleApi(req, res, pathname) {
     }
   }
 
+  if (req.method === "POST" && pathname === "/api/base-resume") {
+    try {
+      const raw = await readRawBody(req);
+      const uploaded = parseMultipartFile(raw, req.headers["content-type"], "baseResume");
+      const originalName = sanitizeUploadName(uploaded.filename);
+      if (path.extname(originalName).toLowerCase() !== ".docx") {
+        return sendJson(res, 400, { error: "Base resume upload must be a .docx file." });
+      }
+      if (!uploaded.data.slice(0, 2).equals(Buffer.from("PK"))) {
+        return sendJson(res, 400, { error: "Uploaded file does not look like a valid .docx file." });
+      }
+      await fsp.mkdir(BASE_RESUME_DIR, { recursive: true });
+      const stampedName = `${new Date().toISOString().replace(/[:.]/g, "-")}_${originalName}`;
+      const outPath = path.join(BASE_RESUME_DIR, stampedName);
+      await fsp.writeFile(outPath, uploaded.data);
+      const merged = normalizeAppSettings({ ...readAppSettings(), baseResumePath: outPath });
+      const serialised = JSON.stringify(merged, null, 2);
+      await fsp.writeFile(APP_SETTINGS_PATH, serialised, { encoding: "utf8", flag: "w" });
+      resumeSkillCache = { key: "", skills: [] };
+      return sendJson(res, 200, {
+        ok: true,
+        baseResumePath: merged.baseResumePath,
+        defaultResume: merged.defaultResume,
+        config: merged,
+      });
+    } catch (error) {
+      return sendJson(res, 400, { error: error.message || String(error) });
+    }
+  }
+
   if (req.method === "POST" && pathname === "/api/app-config") {
     const body = await readBody(req);
-    const serialised = JSON.stringify(body, null, 2);
+    let normalized;
+    try {
+      normalized = normalizeAppSettings(body);
+    } catch (error) {
+      return sendJson(res, 400, { error: error.message || String(error) });
+    }
+    const serialised = JSON.stringify(normalized, null, 2);
     // Verify before writing (prevents corrupt config on bad payloads)
     JSON.parse(serialised);
     const tmp = APP_SETTINGS_PATH + ".tmp";
     await fsp.writeFile(tmp, serialised, { encoding: "utf8" });
     await fsp.writeFile(APP_SETTINGS_PATH, serialised, { encoding: "utf8", flag: "w" });
     await fsp.unlink(tmp).catch(() => {});
-    return sendJson(res, 200, { ok: true });
+    return sendJson(res, 200, { ok: true, config: normalized });
   }
 
   if (req.method === "POST" && pathname === "/api/jobs/bulk") {
@@ -843,17 +1173,50 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-function scheduleAutoRefresh() {
-  setInterval(async () => {
-    try {
-      const result = await runJobFinder();
+function scheduleNextAutoRefresh(delay = AUTO_REFRESH_INTERVAL_MS) {
+  if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+  autoRefreshNextAt = new Date(Date.now() + delay).toISOString();
+  autoRefreshTimer = setTimeout(runAutoRefresh, delay);
+}
+
+async function runAutoRefresh() {
+  if (autoRefreshRunning) {
+    scheduleNextAutoRefresh();
+    return;
+  }
+  autoRefreshRunning = true;
+  autoRefreshError = "";
+  try {
+    const cutoff = autoRefreshAt || readIsoTimestamp(LAST_FINDER_REFRESH_PATH) || new Date(Date.now() - AUTO_REFRESH_INTERVAL_MS).toISOString();
+    const result = await runJobFinder(["--posted-after", cutoff]);
+    const skipped = (result.failures || []).some((message) => /previous job finder run is still active/i.test(message));
+    if (skipped) {
+      autoRefreshError = "Skipped because another search was running";
+      console.log(`Auto-refresh skipped: ${autoRefreshError}`);
+    } else {
       autoRefreshAt = new Date().toISOString();
-      autoRefreshAdded = result.added || 0;
+      await saveAutoRefreshTimestamp(autoRefreshAt);
+      autoRefreshAdded = Number(result.added || 0);
+      await logActivity({
+        type: "auto-refresh",
+        message: `Hourly auto-refresh added ${autoRefreshAdded} jobs`,
+        added: autoRefreshAdded,
+        duplicatesSkipped: Number(result.duplicatesSkipped || 0),
+      });
       console.log(`Auto-refresh: ${autoRefreshAdded} new jobs added`);
-    } catch (error) {
-      console.error("Auto-refresh failed:", error.message);
     }
-  }, 60 * 60 * 1000); // every 1 hour
+  } catch (error) {
+    autoRefreshError = error.message || String(error);
+    console.error("Auto-refresh failed:", autoRefreshError);
+  } finally {
+    autoRefreshRunning = false;
+    scheduleNextAutoRefresh();
+  }
+}
+
+function scheduleAutoRefresh() {
+  autoRefreshAt = readIsoTimestamp(LAST_AUTO_REFRESH_PATH);
+  scheduleNextAutoRefresh();
 }
 
 ensureData()
