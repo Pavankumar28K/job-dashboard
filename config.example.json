@@ -1,5 +1,5 @@
 {
-  "appRoot": "~/Desktop/job application",
-  "trackerCsv": "~/Desktop/job application/tracker/job_tracker.csv",
-  "pythonExe": "python3"
+  "appRoot": "C:/Users/YOUR-NAME/Desktop/job application",
+  "trackerCsv": "C:/Users/YOUR-NAME/Desktop/job application/tracker/job_tracker.csv",
+  "pythonExe": "C:/Users/YOUR-NAME/Desktop/job-dashboard/.venv/Scripts/python.exe"
 }

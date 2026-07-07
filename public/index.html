@@ -1,327 +1,336 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Job Application Dashboard</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <div>
-          <h1>Job Applications</h1>
-          <div class="folder-line" id="folderLine">Loading folders...</div>
-        </div>
-        <div class="top-actions">
-          <div class="refresh-action">
-            <button id="refreshCsvBtn" class="button secondary">Search Web + Portals</button>
-            <div class="day-status small-status" id="dayStatus">Loading...</div>
-            <div class="refresh-status small-status" id="refreshStatus">Auto-refresh: hourly</div>
-          </div>
-          <button id="exportCsvBtn" class="button secondary">Export CSV</button>
-          <button id="settingsBtn" class="button secondary">⚙ Settings</button>
-          <button id="addJobBtn" class="button primary">Add Job</button>
-        </div>
-      </header>
+ <head>
+ <meta charset="utf-8" />
+ <meta name="viewport" content="width=device-width, initial-scale=1" />
+ <title>Job Application Dashboard</title>
+ <link rel="stylesheet" href="/styles.css" />
+ </head>
+ <body>
+ <div class="app-shell">
+ <header class="topbar">
+ <div>
+ <h1>Job Applications</h1>
+ <div class="folder-line" id="folderLine">Loading folders...</div>
+ </div>
+ <div class="top-actions">
+ <div class="refresh-action">
+ <button id="refreshCsvBtn" class="button secondary">Search Web + Portals</button>
+ <div class="day-status small-status" id="dayStatus">Loading...</div>
+ <div class="refresh-status small-status" id="refreshStatus">Auto-refresh: hourly</div>
+ </div>
+ <button id="exportCsvBtn" class="button secondary">Export CSV</button>
+ <button id="settingsBtn" class="button secondary">Settings</button>
+ <button id="addJobBtn" class="button primary">Add Job</button>
+ </div>
+ </header>
 
-      <section class="view-panel" aria-label="Job dashboard views">
-        <div class="segmented" role="group" aria-label="Job view">
-          <button id="dailyViewBtn" class="segment active" type="button">Daily Jobs</button>
-          <button id="appliedViewBtn" class="segment" type="button">All Applied</button>
-          <button id="allJobsViewBtn" class="segment" type="button">All Jobs</button>
-          <button id="analyticsViewBtn" class="segment" type="button">Analytics</button>
-          <button id="roadmapViewBtn" class="segment" type="button">🗺 Roadmap</button>
-          <button id="prepViewBtn" class="segment" type="button">📚 Prep</button>
-        </div>
-        <div class="view-note" id="viewNote">Showing jobs found for the selected date.</div>
-      </section>
+ <section class="view-panel" aria-label="Job dashboard views">
+ <div class="segmented" role="group" aria-label="Job view">
+ <button id="dailyViewBtn" class="segment active" type="button">Daily Jobs</button>
+ <button id="appliedViewBtn" class="segment" type="button">All Applied</button>
+ <button id="allJobsViewBtn" class="segment" type="button">All Jobs</button>
+ <button id="analyticsViewBtn" class="segment" type="button">Analytics</button>
+ <button id="roadmapViewBtn" class="segment" type="button">Roadmap</button>
+ <button id="prepViewBtn" class="segment" type="button">Prep</button>
+ </div>
+ <div class="view-note" id="viewNote">Showing jobs found for the selected date.</div>
+ </section>
 
-      <section class="day-panel" aria-label="Daily application summary">
-        <div class="date-control">
-          <label for="dateFilter">Application Date</label>
-          <input id="dateFilter" class="input" type="date" />
-        </div>
-        <button id="todayBtn" class="button secondary">Today</button>
-        <div class="ring-graph-combo">
-          <div id="dailyTargetWidget" class="daily-target-widget"></div>
-          <div id="lineGraphSection" class="inline-graph"></div>
-        </div>
-      </section>
+ <section class="day-panel" aria-label="Daily application summary">
+ <div class="date-control">
+ <label for="dateFilter">Application Date</label>
+ <input id="dateFilter" class="input" type="date" />
+ </div>
+ <button id="todayBtn" class="button secondary">Today</button>
+ <div class="ring-graph-combo">
+ <div id="dailyTargetWidget" class="daily-target-widget"></div>
+ <div id="lineGraphSection" class="inline-graph"></div>
+ </div>
+ </section>
 
-      <section class="metrics" id="metrics"></section>
+ <section class="metrics" id="metrics"></section>
 
-      <main class="layout">
-        <section class="job-list-panel">
-          <div class="filters">
-            <input id="searchInput" class="input" placeholder="Search company, role, portal, skill..." />
-            <select id="statusFilter" class="select">
-              <option value="all">All statuses</option>
-              <option value="Apply-ready">Apply-ready</option>
-              <option value="Ready">Ready</option>
-              <option value="Applied">Applied</option>
-              <option value="not-applied">Not applied</option>
-              <option value="Blocked">Blocked</option>
-            </select>
-            <select id="priorityFilter" class="select">
-              <option value="all">All priorities</option>
-              <option value="High">High priority</option>
-              <option value="Medium">Medium priority</option>
-              <option value="Low">Low priority</option>
-              <option value="Blocked">Blocked priority</option>
-            </select>
-            <select id="sourceFilter" class="select">
-              <option value="all">All portals</option>
-            </select>
+ <main class="layout">
+ <section class="job-list-panel">
+ <div class="filters">
+ <input id="searchInput" class="input" placeholder="Search company, role, portal, skill..." />
+ <select id="statusFilter" class="select">
+ <option value="all">All statuses</option>
+ <option value="Apply-ready">Apply-ready</option>
+ <option value="Ready">Ready</option>
+ <option value="Applied">Applied</option>
+ <option value="not-applied">Not applied</option>
+ <option value="Blocked">Blocked</option>
+ </select>
+ <select id="priorityFilter" class="select">
+ <option value="all">All priorities</option>
+ <option value="High">High priority</option>
+ <option value="Medium">Medium priority</option>
+ <option value="Low">Low priority</option>
+ <option value="Blocked">Blocked priority</option>
+ </select>
+ <select id="sourceFilter" class="select" aria-label="Filter by job board with active job counts" title="Filter by job board">
+ <option value="all">All job boards</option>
+ </select>
+ <select id="typeFilter" class="select">
+ <option value="all">All types</option>
+ <option value="contract">Contract</option>
+ <option value="fulltime">Full-time</option>
+ </select>
+ </div>
+ <div class="bulk-bar" id="bulkBar">
+ <span class="bulk-count" id="bulkCount">0 selected</span>
+ <button id="bulkAppliedBtn" class="button success small">Mark Applied</button>
+ <button id="bulkDeleteBtn" class="button danger small">Delete Selected</button>
+ <button id="bulkClearBtn" class="button secondary small">Clear</button>
+ </div>
+ <div class="job-table-wrap">
+ <table class="job-table">
+ <thead>
+ <tr>
+ <th class="checkbox-cell"><input type="checkbox" id="selectAll" /></th>
+ <th>Job</th>
+ <th>Type</th>
+ <th>Portal</th>
+ <th>Pay</th>
+ <th>Score</th>
+ <th>Resume Match</th>
+ <th>Status</th>
+ <th>Resume / JD</th>
+ <th>Actions</th>
+ </tr>
+ </thead>
+ <tbody id="jobRows"></tbody>
+ </table>
+ </div>
+ </section>
 
-          </div>
-          <div class="bulk-bar" id="bulkBar">
-            <span class="bulk-count" id="bulkCount">0 selected</span>
-            <button id="bulkAppliedBtn" class="button success small">Mark Applied</button>
-            <button id="bulkDeleteBtn" class="button danger small">Delete Selected</button>
-            <button id="bulkClearBtn" class="button secondary small">Clear</button>
-          </div>
-          <div class="job-table-wrap">
-            <table class="job-table">
-              <thead>
-                <tr>
-                  <th class="checkbox-cell"><input type="checkbox" id="selectAll" /></th>
-                  <th>Job</th>
-                  <th>Portal</th>
-                  <th>Pay</th>
-                  <th>Score</th>
-                  <th>Resume Match</th>
-                  <th>Status</th>
-                  <th>Resume / JD</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="jobRows"></tbody>
-            </table>
-          </div>
-        </section>
+ <div class="panel-divider" id="panelDivider" title="Drag to resize"></div>
 
-        <div class="panel-divider" id="panelDivider" title="Drag to resize"></div>
+ <aside class="detail-panel" id="detailPanel">
+ <div class="empty-state">Select a job to view details.</div>
+ </aside>
+ </main>
 
-        <aside class="detail-panel" id="detailPanel">
-          <div class="empty-state">Select a job to view details.</div>
-        </aside>
-      </main>
+ <div id="analyticsPanel" class="analytics-panel" style="display:none"></div>
+ <div id="roadmapPanel" class="roadmap-panel" style="display:none"></div>
+ <div id="prepPanel" class="prep-panel" style="display:none"></div>
+ </div>
 
-      <div id="analyticsPanel" class="analytics-panel" style="display:none"></div>
-      <div id="roadmapPanel" class="roadmap-panel" style="display:none"></div>
-      <div id="prepPanel" class="prep-panel" style="display:none"></div>
-    </div>
+ <div class="chat-widget" id="chatWidget">
+ <button id="chatLauncher" class="chat-launcher" type="button">Chat</button>
+ <section class="chat-panel" aria-label="Job search assistant">
+ <div class="chat-head">
+ <div>
+ <h2>Search Assistant</h2>
+ <span id="chatStatus" class="chat-status">Ready</span>
+ </div>
+ <div class="chat-controls">
+ <button id="chatMinimizeBtn" class="icon-button" type="button" aria-label="Minimize chat">-</button>
+ <button id="chatCloseBtn" class="icon-button" type="button" aria-label="Close chat">X</button>
+ </div>
+ </div>
+ <div class="chat-body">
+ <div class="chat-quick-actions" aria-label="Quick portal searches">
+ <button class="chat-chip" type="button" data-chat-prompt="search all portals">All portals</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search Infosys portal">Infosys</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search Dice portal">Dice</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search LinkedIn portal">LinkedIn</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search Wellfound portal">Wellfound</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search College Recruiter portal">College Recruiter</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search The Forage portal">The Forage</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search WayUp portal">WayUp</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search Handshake portal">Handshake</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search Kforce portal">Kforce</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search Vaco portal">Vaco</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search Insight Global portal">Insight Global</button>
+ <button class="chat-chip" type="button" data-chat-prompt="search Capgemini portal">Capgemini</button>
+ </div>
+ <div class="chat-log" id="chatLog"></div>
+ <form id="chatForm" class="chat-form">
+ <input id="chatInput" class="input" placeholder="Paste a JD, company careers URL, or portal search..." autocomplete="off" />
+ <button id="chatSubmitBtn" class="button primary" type="submit">Send</button>
+ </form>
+ </div>
+ </section>
+ </div>
 
-    <div class="chat-widget" id="chatWidget">
-      <button id="chatLauncher" class="chat-launcher" type="button">Chat</button>
-      <section class="chat-panel" aria-label="Job search assistant">
-        <div class="chat-head">
-          <div>
-            <h2>Search Assistant</h2>
-            <span id="chatStatus" class="chat-status">Ready</span>
-          </div>
-          <div class="chat-controls">
-            <button id="chatMinimizeBtn" class="icon-button" type="button" aria-label="Minimize chat">-</button>
-            <button id="chatCloseBtn" class="icon-button" type="button" aria-label="Close chat">X</button>
-          </div>
-        </div>
-        <div class="chat-body">
-          <div class="chat-quick-actions" aria-label="Quick portal searches">
-            <button class="chat-chip" type="button" data-chat-prompt="search all portals">All portals</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search Infosys portal">Infosys</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search Dice portal">Dice</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search LinkedIn portal">LinkedIn</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search Wellfound portal">Wellfound</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search College Recruiter portal">College Recruiter</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search The Forage portal">The Forage</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search WayUp portal">WayUp</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search Kforce portal">Kforce</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search Vaco portal">Vaco</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search Insight Global portal">Insight Global</button>
-            <button class="chat-chip" type="button" data-chat-prompt="search Capgemini portal">Capgemini</button>
-          </div>
-          <div class="chat-log" id="chatLog"></div>
-          <form id="chatForm" class="chat-form">
-            <input id="chatInput" class="input" placeholder="Paste a JD, company careers URL, or portal search..." autocomplete="off" />
-            <button id="chatSubmitBtn" class="button primary" type="submit">Send</button>
-          </form>
-        </div>
-      </section>
-    </div>
+ <dialog id="jobDialog">
+ <form method="dialog" class="dialog-content" id="jobForm">
+ <div class="dialog-head">
+ <h2>Add Job</h2>
+ <button type="button" id="closeDialogBtn" class="icon-button" aria-label="Close">X</button>
+ </div>
+ <label>Company <input name="company" class="input" required /></label>
+ <label>Role <input name="role" class="input" required /></label>
+ <div class="two-col">
+ <label>Date Found <input id="dialogDateFound" name="dateFound" class="input" type="date" /></label>
+ <label>Portal <input name="source" class="input" placeholder="LinkedIn, Dice, Indeed..." /></label>
+ </div>
+ <div class="two-col">
+ <label>Type <select name="employmentType" class="select"><option value="">Unknown</option><option value="fulltime">Full-time</option><option value="contract">Contract</option></select></label>
+ <label>Job link <input name="url" class="input" /></label>
+ </div>
+ <div class="two-col">
+ <label>Location <input name="location" class="input" /></label>
+ <label>Pay <input name="pay" class="input" placeholder="$55/hr, $120k..." /></label>
+ </div>
+ <label>JD / notes <textarea name="jd" class="textarea" rows="8"></textarea></label>
+ <div class="dialog-actions">
+ <button type="button" id="cancelDialogBtn" class="button secondary">Cancel</button>
+ <button class="button primary">Save Job</button>
+ </div>
+ </form>
+ </dialog>
 
-    <dialog id="jobDialog">
-      <form method="dialog" class="dialog-content" id="jobForm">
-        <div class="dialog-head">
-          <h2>Add Job</h2>
-          <button type="button" id="closeDialogBtn" class="icon-button" aria-label="Close">X</button>
-        </div>
-        <label>Company <input name="company" class="input" required /></label>
-        <label>Role <input name="role" class="input" required /></label>
-        <div class="two-col">
-          <label>Date Found <input id="dialogDateFound" name="dateFound" class="input" type="date" /></label>
-          <label>Portal <input name="source" class="input" placeholder="LinkedIn, Dice, Indeed..." /></label>
-        </div>
-        <label>Job link <input name="url" class="input" /></label>
-        <div class="two-col">
-          <label>Location <input name="location" class="input" /></label>
-          <label>Pay <input name="pay" class="input" placeholder="$55/hr, $120k..." /></label>
-        </div>
-        <label>JD / notes <textarea name="jd" class="textarea" rows="8"></textarea></label>
-        <div class="dialog-actions">
-          <button type="button" id="cancelDialogBtn" class="button secondary">Cancel</button>
-          <button class="button primary">Save Job</button>
-        </div>
-      </form>
-    </dialog>
+ <div class="toast" id="toast"></div>
 
-    <div class="toast" id="toast"></div>
+ <dialog id="settingsDialog">
+ <div class="dialog-content settings-dialog-content">
+ <div class="dialog-head">
+ <h2>Job Search Settings</h2>
+ <button type="button" id="closeSettingsBtn" class="icon-button" aria-label="Close">X</button>
+ </div>
+ <p class="settings-note">These settings control what jobs the app searches for, how they are scored, and your daily goal. Changes take effect on the next search.</p>
 
-    <dialog id="settingsDialog">
-      <div class="dialog-content settings-dialog-content">
-        <div class="dialog-head">
-          <h2>Job Search Settings</h2>
-          <button type="button" id="closeSettingsBtn" class="icon-button" aria-label="Close">X</button>
-        </div>
-        <p class="settings-note">These settings control what jobs the app searches for, how they are scored, and your daily goal. Changes take effect on the next search.</p>
+ <div class="settings-section">
+ <label class="settings-label">Target Job Titles <span class="settings-hint">(one per line - used as Bing search terms)</span></label>
+ <textarea id="settingsTitles" class="textarea" rows="5" placeholder="Software Engineer&#10;.NET Developer&#10;Full Stack Developer"></textarea>
+ <button type="button" id="suggestSkillsBtn" class="button secondary" style="margin-top:8px;font-size:12px;padding:5px 12px;">Suggest Skills from Titles</button>
+ <div id="skillSuggestionsBox" style="display:none;margin-top:10px;background:#f0f4ff;border:1.5px solid #c7d2fe;border-radius:10px;padding:14px 16px;">
+ <div style="font-size:12px;font-weight:700;color:#3730a3;margin-bottom:10px;">Recommended skills based on your job titles:</div>
+ <div style="margin-bottom:8px;">
+ <div style="font-size:11px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Must-Have</div>
+ <div id="suggestMustTags" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+ </div>
+ <div>
+ <div style="font-size:11px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Nice-to-Have</div>
+ <div id="suggestNiceTags" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+ </div>
+ <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+ <button type="button" id="applyMustSuggestBtn" class="button primary" style="font-size:12px;padding:5px 12px;">+ Add Must-Have</button>
+ <button type="button" id="applyNiceSuggestBtn" class="button secondary" style="font-size:12px;padding:5px 12px;">+ Add Nice-to-Have</button>
+ <button type="button" id="applyAllSuggestBtn" class="button secondary" style="font-size:12px;padding:5px 12px;">+ Add All</button>
+ </div>
+ </div>
+ </div>
 
-        <div class="settings-section">
-          <label class="settings-label">Target Job Titles <span class="settings-hint">(one per line — used as Bing search terms)</span></label>
-          <textarea id="settingsTitles" class="textarea" rows="5" placeholder="Software Engineer&#10;.NET Developer&#10;Full Stack Developer"></textarea>
-          <button type="button" id="suggestSkillsBtn" class="button secondary" style="margin-top:8px;font-size:12px;padding:5px 12px;">💡 Suggest Skills from Titles</button>
-          <div id="skillSuggestionsBox" style="display:none;margin-top:10px;background:#f0f4ff;border:1.5px solid #c7d2fe;border-radius:10px;padding:14px 16px;">
-            <div style="font-size:12px;font-weight:700;color:#3730a3;margin-bottom:10px;">Recommended skills based on your job titles:</div>
-            <div style="margin-bottom:8px;">
-              <div style="font-size:11px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Must-Have</div>
-              <div id="suggestMustTags" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
-            </div>
-            <div>
-              <div style="font-size:11px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Nice-to-Have</div>
-              <div id="suggestNiceTags" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
-            </div>
-            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
-              <button type="button" id="applyMustSuggestBtn" class="button primary" style="font-size:12px;padding:5px 12px;">+ Add Must-Have</button>
-              <button type="button" id="applyNiceSuggestBtn" class="button secondary" style="font-size:12px;padding:5px 12px;">+ Add Nice-to-Have</button>
-              <button type="button" id="applyAllSuggestBtn" class="button secondary" style="font-size:12px;padding:5px 12px;">+ Add All</button>
-            </div>
-          </div>
-        </div>
+ <div class="settings-section">
+ <label class="settings-label">Must-Have Skills <span class="settings-hint">(comma-separated - big score boost when matched)</span></label>
+ <input id="settingsMustHave" class="input" placeholder="C#, .NET, Azure" />
+ </div>
 
-        <div class="settings-section">
-          <label class="settings-label">Must-Have Skills <span class="settings-hint">(comma-separated — big score boost when matched)</span></label>
-          <input id="settingsMustHave" class="input" placeholder="C#, .NET, Azure" />
-        </div>
+ <div class="settings-section">
+ <label class="settings-label">Nice-to-Have Skills <span class="settings-hint">(comma-separated - smaller score boost)</span></label>
+ <input id="settingsNiceToHave" class="input" placeholder="Angular, React, SQL, Docker" />
+ </div>
 
-        <div class="settings-section">
-          <label class="settings-label">Nice-to-Have Skills <span class="settings-hint">(comma-separated — smaller score boost)</span></label>
-          <input id="settingsNiceToHave" class="input" placeholder="Angular, React, SQL, Docker" />
-        </div>
+ <div class="settings-row">
+ <div class="settings-section half">
+ <label class="settings-label">Daily Application Target</label>
+ <input id="settingsDailyTarget" class="input" type="number" min="1" max="500" />
+ </div>
+ <div class="settings-section half">
+ <label class="settings-label">Minimum Fit Score (jobs below this are hidden)</label>
+ <input id="settingsMinScore" class="input" type="number" min="0" max="99" />
+ </div>
+ </div>
 
-        <div class="settings-row">
-          <div class="settings-section half">
-            <label class="settings-label">Daily Application Target</label>
-            <input id="settingsDailyTarget" class="input" type="number" min="1" max="500" />
-          </div>
-          <div class="settings-section half">
-            <label class="settings-label">Minimum Fit Score (jobs below this are hidden)</label>
-            <input id="settingsMinScore" class="input" type="number" min="0" max="99" />
-          </div>
-        </div>
+ <div class="settings-row">
+ <div class="settings-section half">
+ <label class="settings-label">High Priority threshold (score >=)</label>
+ <input id="settingsHighThresh" class="input" type="number" min="1" max="99" />
+ </div>
+ <div class="settings-section half">
+ <label class="settings-label">Medium Priority threshold (score >=)</label>
+ <input id="settingsMediumThresh" class="input" type="number" min="1" max="99" />
+ </div>
+ </div>
 
-        <div class="settings-row">
-          <div class="settings-section half">
-            <label class="settings-label">High Priority threshold (score ≥)</label>
-            <input id="settingsHighThresh" class="input" type="number" min="1" max="99" />
-          </div>
-          <div class="settings-section half">
-            <label class="settings-label">Medium Priority threshold (score ≥)</label>
-            <input id="settingsMediumThresh" class="input" type="number" min="1" max="99" />
-          </div>
-        </div>
+ <div class="settings-row">
+ <div class="settings-section half">
+ <label class="settings-label">Maximum Required Experience <span class="settings-hint">(0 = no limit)</span></label>
+ <input id="settingsMaxExperience" class="input" type="number" min="0" max="60" />
+ </div>
+ <div class="settings-section half">
+ <label class="settings-label">Upload Base Resume <span class="settings-hint">(.docx)</span></label>
+ <input id="settingsBaseResumeFile" class="input" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+ <input id="settingsBaseResumePath" class="input" placeholder="No base resume uploaded yet" readonly style="margin-top:8px" />
+ <div id="settingsBaseResumeStatus" class="settings-hint" style="margin-top:6px">Resume match scores will be calculated from the uploaded file.</div>
+ </div>
+ </div>
 
-        <div class="settings-row">
-          <div class="settings-section half">
-            <label class="settings-label">Maximum Required Experience <span class="settings-hint">(0 = no limit)</span></label>
-            <input id="settingsMaxExperience" class="input" type="number" min="0" max="60" />
-          </div>
-          <div class="settings-section half">
-            <label class="settings-label">Upload Base Resume <span class="settings-hint">(.docx)</span></label>
-            <input id="settingsBaseResumeFile" class="input" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-            <input id="settingsBaseResumePath" class="input" placeholder="No base resume uploaded yet" readonly style="margin-top:8px" />
-            <div id="settingsBaseResumeStatus" class="settings-hint" style="margin-top:6px">Resume match scores will be calculated from the uploaded file.</div>
-          </div>
-        </div>
+ <div class="settings-row">
+ <div class="settings-section half">
+ <label class="settings-label">Minimum Hourly Pay <span class="settings-hint">(0 = no limit)</span></label>
+ <input id="settingsMinHourlyPay" class="input" type="number" min="0" />
+ </div>
+ <div class="settings-section half">
+ <label class="settings-label">Minimum Annual Pay <span class="settings-hint">(0 = no limit)</span></label>
+ <input id="settingsMinAnnualPay" class="input" type="number" min="0" step="1000" />
+ </div>
+ </div>
 
-        <div class="settings-row">
-          <div class="settings-section half">
-            <label class="settings-label">Minimum Hourly Pay <span class="settings-hint">(0 = no limit)</span></label>
-            <input id="settingsMinHourlyPay" class="input" type="number" min="0" />
-          </div>
-          <div class="settings-section half">
-            <label class="settings-label">Minimum Annual Pay <span class="settings-hint">(0 = no limit)</span></label>
-            <input id="settingsMinAnnualPay" class="input" type="number" min="0" step="1000" />
-          </div>
-        </div>
+ <div class="settings-row">
+ <div class="settings-section half">
+ <label class="settings-label">Search Depth <span class="settings-hint">(1 fast, 2 more coverage, 3 maximum)</span></label>
+ <input id="settingsSearchDepth" class="input" type="number" min="1" max="3" />
+ </div>
+ <div class="settings-section half">
+ <label class="settings-label">Concurrent Requests <span class="settings-hint">(8-96)</span></label>
+ <input id="settingsSearchConcurrency" class="input" type="number" min="8" max="96" />
+ </div>
+ </div>
 
-        <div class="settings-row">
-          <div class="settings-section half">
-            <label class="settings-label">Search Depth <span class="settings-hint">(1 fast, 2 more coverage, 3 maximum)</span></label>
-            <input id="settingsSearchDepth" class="input" type="number" min="1" max="3" />
-          </div>
-          <div class="settings-section half">
-            <label class="settings-label">Concurrent Requests <span class="settings-hint">(8-96)</span></label>
-            <input id="settingsSearchConcurrency" class="input" type="number" min="8" max="96" />
-          </div>
-        </div>
+ <div class="settings-section">
+ <label class="settings-label">Request Timeout Seconds <span class="settings-hint">(4-20; lower fails faster)</span></label>
+ <input id="settingsSearchTimeout" class="input" type="number" min="4" max="20" />
+ </div>
 
-        <div class="settings-section">
-          <label class="settings-label">Request Timeout Seconds <span class="settings-hint">(4-20; lower fails faster)</span></label>
-          <input id="settingsSearchTimeout" class="input" type="number" min="4" max="20" />
-        </div>
+ <div class="settings-section">
+ <label class="settings-checkbox-label">
+ <input id="settingsRemoteBoost" type="checkbox" />
+ Boost score for remote jobs
+ </label>
+ </div>
 
-        <div class="settings-section">
-          <label class="settings-checkbox-label">
-            <input id="settingsRemoteBoost" type="checkbox" />
-            Boost score for remote jobs
-          </label>
-        </div>
+ <div class="settings-section">
+ <div class="settings-boards-head">
+ <span class="settings-label">Job Boards to Search</span>
+ <div class="settings-boards-actions">
+ <button type="button" class="link-btn" id="selectAllSourcesBtn">Select all</button>
+ <span class="muted-sep">-</span>
+ <button type="button" class="link-btn" id="deselectAllSourcesBtn">Deselect all</button>
+ </div>
+ </div>
 
-        <div class="settings-section">
-          <div class="settings-boards-head">
-            <span class="settings-label">Job Boards to Search</span>
-            <div class="settings-boards-actions">
-              <button type="button" class="link-btn" id="selectAllSourcesBtn">Select all</button>
-              <span class="muted-sep">·</span>
-              <button type="button" class="link-btn" id="deselectAllSourcesBtn">Deselect all</button>
-            </div>
-          </div>
+ <div class="boards-group">
+ <div class="boards-group-label">Job Boards</div>
+ <div class="boards-grid" id="boardsGroupDirect"></div>
+ </div>
+ <div class="boards-group">
+ <div class="boards-group-label">ATS Platforms</div>
+ <div class="boards-grid" id="boardsGroupAts"></div>
+ </div>
+ <div class="boards-group">
+ <div class="boards-group-label">Staffing Agencies</div>
+ <div class="boards-grid" id="boardsGroupStaffing"></div>
+ </div>
+ </div>
 
-          <div class="boards-group">
-            <div class="boards-group-label">Job Boards</div>
-            <div class="boards-grid" id="boardsGroupDirect"></div>
-          </div>
-          <div class="boards-group">
-            <div class="boards-group-label">ATS Platforms</div>
-            <div class="boards-grid" id="boardsGroupAts"></div>
-          </div>
-          <div class="boards-group">
-            <div class="boards-group-label">Staffing Agencies</div>
-            <div class="boards-grid" id="boardsGroupStaffing"></div>
-          </div>
-        </div>
+ <div class="dialog-actions">
+ <button type="button" id="cancelSettingsBtn" class="button secondary">Cancel</button>
+ <button type="button" id="saveSettingsBtn" class="button primary">Save Settings</button>
+ </div>
+ </div>
+ </dialog>
 
-        <div class="dialog-actions">
-          <button type="button" id="cancelSettingsBtn" class="button secondary">Cancel</button>
-          <button type="button" id="saveSettingsBtn" class="button primary">Save Settings</button>
-        </div>
-      </div>
-    </dialog>
-
-    <script src="/app.js?v=1781309200"></script>
-    <!-- Skill concept modal -->
-  <div id="skillModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);overflow-y:auto">
-    <div id="skillModalInner" style="max-width:860px;margin:32px auto;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)">
-    </div>
-  </div>
+ <script src="/app.js?v=1781420400"></script>
+ <!-- Skill concept modal -->
+ <div id="skillModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);overflow-y:auto">
+ <div id="skillModalInner" style="max-width:860px;margin:32px auto;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+ </div>
+ </div>
 </body>
 </html>

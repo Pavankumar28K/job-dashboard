@@ -334,13 +334,34 @@ NON_US_LOCATION_TERMS = {
 
 # Each entry: (source_name, (query1, query2, ...), (domain1, ...))
 # Use one combined full-time query and one contract query per portal.
+def portal_query_title(title):
+    text = html.unescape(str(title or ""))
+    text = re.sub(r"c\s*#", "C Sharp", text, flags=re.I)
+    text = re.sub(r"\.net", "NET", text, flags=re.I)
+    text = text.replace("/", " ")
+    text = re.sub(r"[^A-Za-z0-9+ .-]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _build_queries(url_prefix):
-    titles = configured_search_queries()
+    titles = list(dict.fromkeys(filter(None, (portal_query_title(title) for title in configured_search_queries()))))
     title_group = " OR ".join(f'"{title}"' for title in titles)
     return (f"site:{url_prefix} ({title_group}) (jobs OR contract)",)
 
 
 BING_RSS_SOURCES = [
+    ("Y Combinator",        _build_queries("ycombinator.com/jobs"),          ("ycombinator.com",)),
+    ("Otta",                _build_queries("otta.com"),                      ("otta.com",)),
+    ("ZipRecruiter",        _build_queries("ziprecruiter.com"),              ("ziprecruiter.com",)),
+    ("Glassdoor",           _build_queries("glassdoor.com"),                 ("glassdoor.com",)),
+    ("Hugging Face",        _build_queries("huggingface.co"),                ("huggingface.co",)),
+    ("Remote OK",           _build_queries("remoteok.com"),                  ("remoteok.com",)),
+    ("We Work Remotely",    _build_queries("weworkremotely.com"),            ("weworkremotely.com",)),
+    ("FlexJobs",            _build_queries("flexjobs.com"),                  ("flexjobs.com",)),
+    ("TechCareers",         _build_queries("techcareers.com"),               ("techcareers.com",)),
+    ("Relocate.me",         _build_queries("relocate.me"),                   ("relocate.me",)),
+    ("Levels.fyi",          _build_queries("levels.fyi/jobs"),               ("levels.fyi",)),
+
     # ATS platforms — server-rendered, well-indexed by Bing
     ("Greenhouse",         _build_queries("boards.greenhouse.io"),          ("boards.greenhouse.io",)),
     ("Lever",              _build_queries("jobs.lever.co"),                 ("jobs.lever.co",)),
@@ -348,18 +369,27 @@ BING_RSS_SOURCES = [
     ("Ashby",              _build_queries("jobs.ashbyhq.com"),              ("jobs.ashbyhq.com",)),
     ("Workday",            _build_queries("myworkdayjobs.com"),             ("myworkdayjobs.com",)),
     ("Wellfound",          _build_queries("wellfound.com/jobs"),            ("wellfound.com",)),
+    ("Handshake",          _build_queries("joinhandshake.com/stu/jobs"),     ("joinhandshake.com",)),
     # Staffing agencies
+    ("Adecco",             _build_queries("adeccousa.com/jobs"),             ("adeccousa.com", "adecco.com")),
+    ("ManpowerGroup",      _build_queries("manpowergroup.com") + _build_queries("manpower.com"), ("manpowergroup.com", "manpower.com")),
+    ("Allegis Group",      _build_queries("allegisgroup.com/careers"),       ("allegisgroup.com",)),
     ("Kforce",             _build_queries("kforce.com"),                    ("kforce.com",)),
     ("TEKsystems",         _build_queries("teksystems.com"),                ("teksystems.com",)),
     ("Robert Half",        _build_queries("roberthalf.com"),                ("roberthalf.com",)),
     ("Insight Global",     _build_queries("insightglobal.com"),             ("insightglobal.com",)),
     ("Vaco",               _build_queries("vaco.com"),                      ("vaco.com",)),
     ("Akkodis",            _build_queries("akkodis.com"),                   ("akkodis.com",)),
+    ("Kelly Services",     _build_queries("kellyservices.com/jobs"),        ("kellyservices.com",)),
+    ("Mondo",             _build_queries("mondo.com/jobs"),                ("mondo.com",)),
     ("Apex Systems",       _build_queries("apexsystems.com"),               ("apexsystems.com",)),
     ("Collabera",          _build_queries("collabera.com"),                 ("collabera.com",)),
     ("Motion Recruitment", _build_queries("motionrecruitment.com"),         ("motionrecruitment.com",)),
     ("The Judge Group",    _build_queries("judge.com"),                     ("judge.com",)),
     ("Experis",            _build_queries("experis.com"),                   ("experis.com",)),
+    ("Staffmark",          _build_queries("staffmark.com/jobs"),            ("staffmark.com",)),
+    ("HireQuest",          _build_queries("hirequest.com/jobs"),            ("hirequest.com",)),
+    ("Beacon Hill",        _build_queries("bhsg.com/jobs") + _build_queries("beaconhillstaffing.com/jobs"), ("bhsg.com", "beaconhillstaffing.com")),
     ("iCIMS",              _build_queries("icims.com"),                     ("icims.com",)),
     # Indeed via Bing (direct scrape is blocked by Indeed)
     ("Indeed",             _build_queries("indeed.com/viewjob"),            ("indeed.com",)),
@@ -388,10 +418,22 @@ PORTAL_ALIASES = {
     "tcs careers": ("TCS Careers",),
     "wipro": ("Wipro Careers",),
     "capgemini": ("Capgemini Careers",),
+    "adecco": ("Adecco",),
+    "adeccousa": ("Adecco",),
+    "adecco usa": ("Adecco",),
+    "manpowergroup": ("ManpowerGroup",),
+    "manpower group": ("ManpowerGroup",),
+    "manpower": ("ManpowerGroup",),
+    "allegis": ("Allegis Group",),
+    "allegis group": ("Allegis Group",),
     "teksystems": ("TEKsystems",),
     "akkodis": ("Akkodis",),
+    "kelly": ("Kelly Services",),
+    "kelly services": ("Kelly Services",),
     "robert half": ("Robert Half",),
     "randstad": ("Randstad",),
+    "mondo": ("Mondo",),
+    "mondo.com": ("Mondo",),
     "apex": ("Apex Systems",),
     "apex systems": ("Apex Systems",),
     "collabera": ("Collabera",),
@@ -399,9 +441,19 @@ PORTAL_ALIASES = {
     "judge": ("The Judge Group",),
     "judge group": ("The Judge Group",),
     "experis": ("Experis",),
+    "staffmark": ("Staffmark",),
+    "hirequest": ("HireQuest",),
+    "hire quest": ("HireQuest",),
+    "beacon hill": ("Beacon Hill",),
+    "becon hill": ("Beacon Hill",),
+    "beaconhill": ("Beacon Hill",),
+    "bhsg": ("Beacon Hill",),
     "greenhouse": ("Greenhouse",),
     "lever": ("Lever",),
     "workday": ("Workday",),
+    "handshake": ("Handshake",),
+    "joinhandshake": ("Handshake",),
+    "joinhandshake.com": ("Handshake",),
     "smartrecruiters": ("SmartRecruiters",),
     "smart recruiters": ("SmartRecruiters",),
     "ashby": ("Ashby",),
@@ -1184,26 +1236,21 @@ def extract_search_redirect(raw_link):
 
 def parse_portal_search(text, source, allowed_domains):
     jobs = []
-    items = re.findall(
-        r'<li><div class="dd algo.*?</li>',
-        text,
-        re.I | re.S,
-    )
+    yahoo_items = re.findall(r'<li><div class="dd algo.*?</li>', text, re.I | re.S)
+    bing_items = re.findall(r'<li class="b_algo"[^>]*>.*?</li>', text, re.I | re.S)
+    items = [("yahoo", item) for item in yahoo_items] + [("bing", item) for item in bing_items]
     domain_misses = 0
     filtered = 0
     seen_links = set()
-    for item in items:
-        link_match = re.search(
-            r'href="(https://r\.search\.yahoo\.com/[^"]+)"',
-            item,
-            re.I,
-        )
-        title_match = re.search(r'<h3[^>]*>(.*?)</h3>', item, re.I | re.S)
-        snippet_match = re.search(
-            r'<div class="compText[^"]*"[^>]*>(.*?)</div>\s*</div>',
-            item,
-            re.I | re.S,
-        )
+    for engine, item in items:
+        if engine == "yahoo":
+            link_match = re.search(r'href="(https://r\.search\.yahoo\.com/[^"]+)"', item, re.I)
+            title_match = re.search(r'<h3[^>]*>(.*?)</h3>', item, re.I | re.S)
+            snippet_match = re.search(r'<div class="compText[^"]*"[^>]*>(.*?)</div>\s*</div>', item, re.I | re.S)
+        else:
+            link_match = re.search(r'<h2[^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>', item, re.I | re.S)
+            title_match = re.search(r'<h2[^>]*>(.*?)</h2>', item, re.I | re.S)
+            snippet_match = re.search(r'<p[^>]*>(.*?)</p>', item, re.I | re.S)
         if not link_match:
             continue
         title = clean_text(title_match.group(1)) if title_match else ""
@@ -1332,8 +1379,33 @@ def parse_remotive(text):
     return jobs
 
 
+def jobicy_safe_tags():
+    tags = []
+    for title in configured_search_queries():
+        text = re.sub(r"\s+", " ", clean_text(title)).strip()
+        lowered = text.lower()
+        replacements = []
+        is_dotnet = ".net" in lowered or "dot net" in lowered
+        is_csharp = "c#" in lowered or "c sharp" in lowered
+        if "full stack" in lowered:
+            replacements.append("Full Stack Developer")
+        if is_dotnet:
+            replacements.append("NET Developer")
+            replacements.append("Software Developer")
+        if is_csharp:
+            replacements.append("Software Developer")
+        if not (is_dotnet or is_csharp):
+            replacements.append(text)
+        for tag in replacements:
+            cleaned = re.sub(r"[#]+", "", tag).replace(".NET", "NET")
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+            if cleaned and cleaned.lower() not in {item.lower() for item in tags}:
+                tags.append(cleaned)
+    return tags
+
+
 def jobicy_search_urls():
-    for tag in configured_search_queries():
+    for tag in jobicy_safe_tags():
         yield f"https://jobicy.com/api/v2/remote-jobs?count=50&tag={quote_plus(tag)}"
 
 
@@ -1366,14 +1438,37 @@ def parse_jobicy(text):
 
 def randstad_search_urls():
     slugs = []
+    # Randstad removes some exact title pages with 410 Gone. Keep title-specific
+    # searches where they work, but normalize brittle technical titles to active
+    # Randstad slugs and broader fallbacks.
+    special_slugs = {
+        ".net developer": ("net-developer", "software-engineer"),
+        "dot net developer": ("net-developer", "software-engineer"),
+        "full stack .net developer": ("net-developer", "software-engineer"),
+        "full stack dot net developer": ("net-developer", "software-engineer"),
+        "c# developer": ("c-sharp-developer", "software-engineer"),
+        "c sharp developer": ("c-sharp-developer", "software-engineer"),
+        "backend engineer": ("software-engineer",),
+        "backend developer": ("back-end-developer", "software-engineer"),
+        "software developer": ("software-engineer",),
+        "python developer": ("python-developer", "software-engineer"),
+        "gen ai engineer": ("python-developer", "data-scientist", "software-engineer"),
+        "ai/ml engineer": ("python-developer", "data-scientist", "data-engineer"),
+        "ai ml engineer": ("python-developer", "data-scientist", "data-engineer"),
+        "mlops engineer": ("python-developer", "data-engineer", "software-engineer"),
+        "ml engineer": ("data-scientist", "data-engineer", "software-engineer"),
+        "ai engineer": ("python-developer", "data-scientist", "software-engineer"),
+        "data scientist": ("data-scientist", "data-analyst"),
+        "data engineer": ("data-engineer", "data-analyst"),
+    }
     for title in configured_search_queries():
-        special_slugs = {
-            "backend developer": "back-end-developer",
-            "c# developer": "c-sharp-developer",
-        }
-        slug = special_slugs.get(title.lower()) or re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
-        if slug and slug not in slugs:
-            slugs.append(slug)
+        normalized = re.sub(r"\s+", " ", title.lower()).strip()
+        title_slugs = special_slugs.get(normalized)
+        if not title_slugs:
+            title_slugs = (re.sub(r"[^a-z0-9]+", "-", normalized).strip("-"),)
+        for slug in title_slugs:
+            if slug and slug not in slugs:
+                slugs.append(slug)
     for slug in slugs:
         yield f"https://www.randstadusa.com/jobs/q-{slug}/"
 
@@ -1691,6 +1786,9 @@ def source_requests(selected_sources=None):
     if allowed("Dice"):
         for url in dice_search_urls():
             yield "Dice", url, parse_dice
+    if allowed("SimplyHired"):
+        for url in simplyhired_search_urls():
+            yield "SimplyHired", url, parse_simplyhired
     if allowed("LinkedIn"):
         for url in linkedin_search_urls():
             yield "LinkedIn", url, parse_linkedin
@@ -1865,7 +1963,7 @@ def collect_candidates(selected_sources=None):
     source_counts = {source: 0 for source, _url, _parser in requests}
     with ThreadPoolExecutor(max_workers=MAX_SOURCE_WORKERS) as executor:
         futures = {
-            executor.submit(fetch, url): (source, url, parser)
+            executor.submit(fetch, url, SEARCH_TIMEOUT_SECONDS, 1): (source, url, parser)
             for source, url, parser in requests
         }
         for future in as_completed(futures):
