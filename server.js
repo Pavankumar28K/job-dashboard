@@ -1,4 +1,4 @@
-﻿const http = require("http");
+const http = require("http");
 const fs = require("fs");
 const fsp = require("fs/promises");
 const os = require("os");
@@ -6,7 +6,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const url = require("url");
 
-const PORT = Number(process.env.PORT || 8766);
+const PORT = Number(process.env.PORT || 8765);
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
