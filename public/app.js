@@ -43,7 +43,7 @@ const SOURCE_GROUPS = {
  "Vaco", "Akkodis", "Kelly Services", "Mondo", "Randstad", "Apex Systems", "Collabera",
  "Motion Recruitment", "The Judge Group", "Experis", "Staffmark", "HireQuest", "Beacon Hill", "iCIMS", "Indeed"],
 };
-const ALL_SOURCES = [...SOURCE_GROUPS.direct, ...SOURCE_GROUPS.ats, ...SOURCE_GROUPS.staffing];
+const ALL_SOURCES = [...SOURCE_GROUPS.startup, ...SOURCE_GROUPS.direct, ...SOURCE_GROUPS.ats, ...SOURCE_GROUPS.staffing];
 
 function renderSourceCheckboxes(enabledSet) {
  const groupMap = { direct: "boardsGroupDirect", ats: "boardsGroupAts", staffing: "boardsGroupStaffing" };

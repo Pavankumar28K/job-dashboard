@@ -977,6 +977,7 @@ async function handleApi(req, res, pathname) {
  "Vaco", "Akkodis", "Kelly Services", "Mondo", "Randstad", "Apex Systems", "Collabera",
  "Motion Recruitment", "The Judge Group", "Experis", "Staffmark", "HireQuest", "Beacon Hill",
  "iCIMS", "Indeed",
+  "Y Combinator", "Otta", "SimplyHired", "ZipRecruiter", "Glassdoor", "Hugging Face", "Remote OK", "We Work Remotely", "FlexJobs", "TechCareers", "Relocate.me", "Levels.fyi",
  ];
  const defaults = {
  jobTitles: ["Software Engineer"],
