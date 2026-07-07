@@ -46,7 +46,7 @@ const SOURCE_GROUPS = {
 const ALL_SOURCES = [...SOURCE_GROUPS.startup, ...SOURCE_GROUPS.direct, ...SOURCE_GROUPS.ats, ...SOURCE_GROUPS.staffing];
 
 function renderSourceCheckboxes(enabledSet) {
- const groupMap = { direct: "boardsGroupDirect", ats: "boardsGroupAts", staffing: "boardsGroupStaffing" };
+ const groupMap = { startup: "boardsGroupStartup", direct: "boardsGroupDirect", ats: "boardsGroupAts", staffing: "boardsGroupStaffing" };
  for (const [group, ids] of Object.entries(SOURCE_GROUPS)) {
  const container = $("#" + groupMap[group]);
  if (!container) continue;
