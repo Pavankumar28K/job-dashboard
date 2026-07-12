@@ -4,7 +4,8 @@
     "Backend Engineer",
     "Full Stack .NET Developer",
     ".NET Developer",
-    "C# Developer"
+    "C# Developer",
+    "software development engineer"
   ],
   "mustHaveSkills": [
     "Communication",
@@ -50,7 +51,7 @@
   "maxRequiredExperienceYears": 0,
   "minimumHourlyPay": 0,
   "minimumAnnualPay": 0,
-  "baseResumePath": "C:\\Users\\konat\\Desktop\\job application\\resume\\base resume\\2026-06-24T12-26-56-703Z_Resume_Pavan.docx",
+  "baseResumePath": "C:\\Users\\konat\\Desktop\\job application\\resume\\base resume\\2026-07-07T17-25-22-548Z_Resume_Pavan.docx",
   "searchDepth": 2,
   "searchConcurrency": 64,
   "searchTimeoutSeconds": 7,
@@ -59,6 +60,9 @@
     "principal engineer"
   ],
   "enabledSources": [
+    "Y Combinator",
+    "Otta",
+    "Wellfound",
     "Dice",
     "LinkedIn",
     "BuiltIn",
@@ -66,12 +70,21 @@
     "Jobicy",
     "The Muse",
     "Infosys Careers",
+    "SimplyHired",
+    "ZipRecruiter",
+    "Glassdoor",
+    "Hugging Face",
+    "Remote OK",
+    "We Work Remotely",
+    "FlexJobs",
+    "TechCareers",
+    "Relocate.me",
+    "Levels.fyi",
     "Greenhouse",
     "Lever",
     "SmartRecruiters",
     "Ashby",
     "Workday",
-    "Wellfound",
     "Handshake",
     "Adecco",
     "ManpowerGroup",
@@ -96,5 +109,5 @@
     "iCIMS",
     "Indeed"
   ],
-  "defaultResume": "2026-06-24T12-26-56-703Z_Resume_Pavan.docx"
+  "defaultResume": "2026-07-07T17-25-22-548Z_Resume_Pavan.docx"
 }

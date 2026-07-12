@@ -388,9 +388,6 @@ async function ensureData() {
  const imported = fs.existsSync(CSV_SOURCE) ? parseJobsCsv(await fsp.readFile(CSV_SOURCE, "utf8")) : [];
  await saveJobs(imported);
  }
- if (!fs.existsSync(ACTIVITY_PATH)) {
- await fsp.writeFile(ACTIVITY_PATH, "[]", "utf8");
- }
 }
 
 async function loadJobs() {
@@ -420,13 +417,6 @@ async function saveJobs(jobs) {
  // Write verified content directly with explicit truncation (avoids null-byte padding from rename)
  await fsp.writeFile(JOBS_PATH, verify, { encoding: "utf8", flag: "w" });
  await fsp.unlink(tmp).catch(() => {});
-}
-
-async function logActivity(event) {
- await ensureData();
- const activity = JSON.parse(await fsp.readFile(ACTIVITY_PATH, "utf8"));
- activity.unshift({ at: new Date().toISOString(), ...event });
- await fsp.writeFile(ACTIVITY_PATH, JSON.stringify(activity.slice(0, 200), null, 2), "utf8");
 }
 
 function parseCsv(text) {
@@ -722,45 +712,6 @@ function jobDedupeKey(job) {
  return `text:${[job.company, job.role, job.location].map(cleanTextKey).join("|")}`;
 }
 
-async function mergeCsvJobs() {
- if (!fs.existsSync(CSV_SOURCE)) return { imported: 0, added: 0, updated: 0 };
- const incoming = parseJobsCsv(await fsp.readFile(CSV_SOURCE, "utf8"));
- const jobs = await loadJobs();
- const byId = new Map(jobs.map((job) => [job.id, job]));
- const byKey = new Map(jobs.map((job) => [jobDedupeKey(job), job]));
- let added = 0;
- let updated = 0;
- for (const job of incoming) {
- const existing = byId.get(job.id) || byKey.get(jobDedupeKey(job));
- if (existing) {
- if (isAppliedStatus(existing.status) || existing.dateApplied) {
- continue;
- }
- Object.assign(existing, {
- ...job,
- id: existing.id,
- dateFound: existing.dateFound || job.dateFound,
- status: existing.status || job.status,
- jd: existing.jd || job.jd,
- jdPath: existing.jdPath || job.jdPath,
- generatedResumePath: existing.generatedResumePath,
- generatedCoverPath: existing.generatedCoverPath,
- resumeUsedPath: existing.resumeUsedPath,
- dateApplied: existing.dateApplied,
- });
- updated++;
- } else {
- jobs.push(job);
- byId.set(job.id, job);
- byKey.set(jobDedupeKey(job), job);
- added++;
- }
- }
- await saveJobs(jobs);
- await logActivity({ type: "import", message: `Imported ${incoming.length} jobs from CSV`, added, updated });
- return { imported: incoming.length, added, updated };
-}
-
 function runGenerator(job, kind) {
  return new Promise((resolve, reject) => {
  const settings = readAppSettings();
@@ -869,18 +820,8 @@ async function handleApi(req, res, pathname) {
  });
  }
 
- if (req.method === "POST" && pathname === "/api/import-csv") {
- return sendJson(res, 200, await mergeCsvJobs());
- }
-
  if (req.method === "POST" && pathname === "/api/find-jobs") {
  const result = await runJobFinder();
- await logActivity({
- type: "find-jobs",
- message: `Finder added ${result.added || 0} jobs; skipped ${result.duplicatesSkipped || 0} duplicates`,
- added: result.added || 0,
- duplicatesSkipped: result.duplicatesSkipped || 0,
- });
  return sendJson(res, 200, result);
  }
 
@@ -889,11 +830,6 @@ async function handleApi(req, res, pathname) {
  const message = String(body.message || "").trim();
  if (looksLikeJobDescription(message)) {
  const { job, result } = await createAppliedJobFromJd(message);
- await logActivity({
- type: "chat-jd-apply",
- jobId: job.id,
- message: `Generated tailored resume and marked applied: ${job.company} - ${job.role}`,
- });
  return sendJson(res, 200, {
  reply: `Created ${job.company} - ${job.role}, generated a tailored resume, and moved it to Applied.`,
  action: "jd_applied",
@@ -904,13 +840,6 @@ async function handleApi(req, res, pathname) {
  const companyUrl = extractUrl(message);
  if (companyUrl) {
  const result = await runJobFinder(["--company-url", companyUrl]);
- await logActivity({
- type: "chat-company-url-search",
- message: `Chat scanned company URL ${companyUrl}: ${result.added || 0} added`,
- companyUrl,
- added: result.added || 0,
- duplicatesSkipped: result.duplicatesSkipped || 0,
- });
  return sendJson(res, 200, {
  reply: companyUrlReply(companyUrl, result),
  action: "company_url_search",
@@ -920,12 +849,6 @@ async function handleApi(req, res, pathname) {
  }
  if (wantsFullSearch(message)) {
  const result = await runJobFinder();
- await logActivity({
- type: "chat-full-search",
- message: `Chat searched all portals: ${result.added || 0} added`,
- added: result.added || 0,
- duplicatesSkipped: result.duplicatesSkipped || 0,
- });
  return sendJson(res, 200, {
  reply: chatReply("all portals", result),
  action: "full_search",
@@ -941,13 +864,6 @@ async function handleApi(req, res, pathname) {
  });
  }
  const result = await runJobFinder(["--portal", portal.value]);
- await logActivity({
- type: "chat-portal-search",
- message: `Chat searched ${portal.label}: ${result.added || 0} added`,
- portal: portal.label,
- added: result.added || 0,
- duplicatesSkipped: result.duplicatesSkipped || 0,
- });
  return sendJson(res, 200, {
  reply: chatReply(portal.label, result),
  action: "portal_search",
@@ -1075,7 +991,6 @@ async function handleApi(req, res, pathname) {
  }
  await saveJobs(jobs);
  }
- await logActivity({ type: `bulk-${action}`, message: `Bulk ${action}: ${count} jobs` });
  return sendJson(res, 200, { ok: true, count });
  }
 
@@ -1085,7 +1000,6 @@ async function handleApi(req, res, pathname) {
  const job = normalizeJob({ ...body, id: body.id || `JOB-MANUAL-${Date.now()}` });
  jobs.unshift(job);
  await saveJobs(jobs);
- await logActivity({ type: "add", jobId: job.id, message: `Added ${job.company} - ${job.role}` });
  return sendJson(res, 201, { job });
  }
 
@@ -1100,7 +1014,6 @@ async function handleApi(req, res, pathname) {
  if (index < 0) return notFound(res);
  const [removed] = jobs.splice(index, 1);
  await saveJobs(jobs);
- await logActivity({ type: "delete", jobId: id, message: `Deleted ${removed.company} - ${removed.role}` });
  return sendJson(res, 200, { ok: true });
  }
 
@@ -1108,7 +1021,6 @@ async function handleApi(req, res, pathname) {
  const body = await readBody(req);
  const job = await updateJob(id, body);
  if (!job) return notFound(res);
- await logActivity({ type: "update", jobId: id, message: `Updated ${job.company} - ${job.role}` });
  return sendJson(res, 200, { job });
  }
 
@@ -1122,7 +1034,6 @@ async function handleApi(req, res, pathname) {
  resumeUsedPath: current.resumeUsedPath || current.generatedResumePath || current.selectedResume || "",
  });
  if (!job) return notFound(res);
- await logActivity({ type: "applied", jobId: id, message: `Marked applied: ${job.company} - ${job.role}` });
  return sendJson(res, 200, { job });
  }
 
@@ -1143,7 +1054,6 @@ async function handleApi(req, res, pathname) {
  if (result.coverPath) patch.generatedCoverPath = result.coverPath;
  if (result.jdPath) patch.jdPath = result.jdPath;
  const updated = await updateJob(id, patch);
- await logActivity({ type: "generate", jobId: id, message: `Generated ${body.kind || "documents"} for ${job.company}` });
  return sendJson(res, 200, { job: updated, result });
  }
 
@@ -1199,12 +1109,6 @@ async function runAutoRefresh() {
  autoRefreshAt = new Date().toISOString();
  await saveAutoRefreshTimestamp(autoRefreshAt);
  autoRefreshAdded = Number(result.added || 0);
- await logActivity({
- type: "auto-refresh",
- message: `Hourly auto-refresh added ${autoRefreshAdded} jobs`,
- added: autoRefreshAdded,
- duplicatesSkipped: Number(result.duplicatesSkipped || 0),
- });
  console.log(`Auto-refresh: ${autoRefreshAdded} new jobs added`);
  }
  } catch (error) {
