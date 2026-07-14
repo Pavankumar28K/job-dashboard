@@ -12,6 +12,10 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.shared import Inches, Pt, RGBColor
 from docx.text.paragraph import Paragraph
+try:
+    import openai
+except ImportError:
+    openai = None
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
@@ -23,7 +27,7 @@ def configured_path(env_name, fallback):
 
 DATA_PATH = configured_path("DASHBOARD_JOBS", APP_DIR / "data" / "jobs.json")
 JOB_ROOT = configured_path("JOB_APP_ROOT", Path.home() / "Desktop" / "job application")
-TAILORED_DIR = JOB_ROOT / "resume" / "tailored resume"
+TAILORED_DIR = JOB_ROOT / "resume" / "AI tailored resume"
 COVER_DIR = JOB_ROOT / "cover letters"
 JD_DIR = JOB_ROOT / "job descriptions"
 CONFIG_PATH = APP_DIR / "config.json"
@@ -239,6 +243,37 @@ def jd_functional_bullets(job, supported):
             break
 
     return bullets
+
+
+def ai_rewrite_bullets(existing_bullets_text, jd_text, api_key):
+    client = openai.OpenAI(api_key=api_key)
+    prompt = (
+        "You are an expert resume writer. I will provide the existing bullet points for a specific job experience, and a target job description. "
+        "Your task is to rewrite these bullet points to perfectly align with the job description. "
+        "You are allowed to extrapolate, enhance, and heavily adapt the experience to match the job description. "
+        "Your primary goal is to ensure the resume perfectly aligns with the JD to bypass ATS and stand out to recruiters, as the candidate is a fast learner who can cope with the work.\n\n"
+        "RULES:\n"
+        "1. Keep the total number of bullets between 3 and 6.\n"
+        "2. **CRITICAL for ATS**: Naturally and seamlessly integrate the exact technical keywords, tools, and methodologies mentioned in the job description into the bullet points.\n"
+        "3. **REPLACE TECHNOLOGIES**: If the original bullet points mention technologies, languages, or tools not relevant to the JD (e.g., .NET when the JD asks for Java), you MUST remove or replace them entirely with the technologies requested in the JD. The final bullet points should read as if the candidate's primary experience is exactly what the JD asks for.\n"
+        "4. Output exactly the new list of bullet points, one per line, starting with a capital letter. Do not use asterisks, dashes, or bullet characters. No intro/outro text.\n\n"
+        f"--- ORIGINAL BULLET POINTS ---\n{existing_bullets_text}\n\n"
+        f"--- TARGET JOB DESCRIPTION ---\n{jd_text}"
+    )
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=800
+        )
+        content = response.choices[0].message.content.strip()
+        bullets = [line.strip("-* ").strip() for line in content.split('\n') if line.strip()]
+        return bullets
+    except Exception as e:
+        print(f"OpenAI generation failed: {e}")
+        return []
 
 
 def relevant_experience_bullets(source, job):
@@ -476,6 +511,10 @@ def experience_insert_points(doc):
 
 
 def weave_role_alignment_into_experience(doc, job, source):
+    api_key = __import__('os').environ.get("OPENAI_API_KEY", "").strip()
+    if api_key and openai:
+        return ai_weave_role_alignment(doc, job, api_key)
+
     bullets = relevant_experience_bullets(source, job)
     if not bullets:
         return 0
@@ -491,6 +530,53 @@ def weave_role_alignment_into_experience(doc, job, source):
         insert_paragraph_after(base_paragraph, f"{prefix}{bullet}", style=style)
         inserted += 1
     return inserted
+
+def ai_weave_role_alignment(doc, job, api_key):
+    jd_text = text_blob(job)
+    rewritten_count = 0
+    
+    for start, end in experience_ranges(doc):
+        paragraphs = doc.paragraphs
+        headers = []
+        for index in range(start, end):
+            following = paragraphs[index + 1 : min(end, index + 7)]
+            if is_probable_company_header(paragraphs[index], following):
+                headers.append(index)
+
+        if not headers:
+            headers = [start - 1]
+
+        for position, header_index in enumerate(headers):
+            next_header = headers[position + 1] if position + 1 < len(headers) else end
+            block_indices = range(max(start, header_index + 1), next_header)
+            
+            old_bullets = []
+            for idx in block_indices:
+                if is_insertable_experience_line(paragraphs[idx]):
+                    old_bullets.append((idx, paragraphs[idx]))
+            
+            if not old_bullets:
+                continue
+                
+            old_bullets_text = "\n".join(p.text.strip() for idx, p in old_bullets)
+            new_bullets = ai_rewrite_bullets(old_bullets_text, jd_text, api_key)
+            
+            if new_bullets:
+                first_bullet_idx, first_p = old_bullets[0]
+                style = first_p.style if is_bullet_like(first_p) else None
+                base_text = first_p.text.strip()
+                prefix = "- " if base_text.startswith("-") else ""
+                
+                for bullet in reversed(new_bullets):
+                    insert_paragraph_after(first_p, f"{prefix}{bullet}", style=style)
+                    rewritten_count += 1
+                
+                for idx, p in old_bullets:
+                    element = p._element
+                    element.getparent().remove(element)
+                    p._p = p._element = None
+                    
+    return rewritten_count
 
 
 def paragraph(doc, text, size=10.5, bold=False, color=None, align=None, after=7):
@@ -523,7 +609,7 @@ def make_resume(job):
     role = job.get("role", "Role")
     out = TAILORED_DIR / f"{job['id']}_{safe_name(company, 32)}_{safe_name(role, 40)}_{candidate}.docx"
     upload_copy = TAILORED_DIR / f"UPLOAD_{safe_name(job['id'], 28)}_{candidate}.docx"
-    latest_copy = TAILORED_DIR / f"UPLOAD_LATEST_TAILORED_RESUME_{candidate}.docx"
+    latest_copy = TAILORED_DIR / f"UPLOAD_LATEST_AI_TAILORED_RESUME_{candidate}.docx"
     doc.save(out)
     shutil.copy2(out, upload_copy)
     shutil.copy2(out, latest_copy)
