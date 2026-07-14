@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import html
 import json
@@ -1768,6 +1768,35 @@ def collect_company_site(company_url):
         except Exception as error:
             failures.append(f"{current} failed: {str(error)[:120]}")
             continue
+
+        if "linkedin.com/jobs/view/" in current:
+            import time
+            detail = parse_linkedin_detail(page)
+            print("EXTRACTED JD LENGTH:", len(detail))
+            if detail:
+                title_match = re.search(r'<title[^>]*>(.*?)</title>', page, flags=re.I)
+                page_title = clean_text(title_match.group(1)) if title_match else "LinkedIn Job"
+                candidates.append({
+                    "ID": f"JOB-LINKEDIN-{int(time.time()*1000)}",
+                    "DateFound": today(),
+                    "DatePosted": today(),
+                    "Company": company or "LinkedIn",
+                    "Role": page_title.replace(" | LinkedIn", "").strip(),
+                    "Source": "LinkedIn",
+                    "URL": current,
+                    "Location": "United States",
+                    "WorkMode": "Remote" if "remote" in detail.lower() else "Unknown",
+                    "EmploymentType": "Not listed",
+                    "Pay": "Not listed",
+                    "FitScore": "85",
+                    "Status": "Ready to review",
+                    "Priority": "Medium",
+                    "WorkAuthRisk": "Verify OPT EAD",
+                    "Notes": detail[:420],
+                    "JD": detail
+                })
+                continue
+                
         candidates.extend(parse_company_page_jobs(page, current, company))
         for link in extract_links(current, page):
             link_key = canonical_url(link)
@@ -2036,13 +2065,15 @@ def merge_dashboard(rows):
         if item:
             if "applied" in clean_text(item.get("status", "")).lower() or item.get("dateApplied"):
                 continue
-            for preserve in ("jd", "jdPath", "generatedResumePath", "generatedCoverPath", "resumeUsedPath", "dateApplied"):
+            for preserve in ("jdPath", "generatedResumePath", "generatedCoverPath", "resumeUsedPath", "dateApplied"):
                 patch[preserve] = item.get(preserve, "")
+            patch["jd"] = item.get("jd", "") or row.get("JD", "")
             patch["id"] = item.get("id") or patch["id"]
             item.update(patch)
+            print("UPDATED ITEM JD LENGTH:", len(item.get("jd", "")))
             updated += 1
         else:
-            patch.update({"jd": "", "jdPath": "", "generatedResumePath": "", "generatedCoverPath": "", "resumeUsedPath": "", "dateApplied": ""})
+            patch.update({"jd": row.get("JD", ""), "jdPath": "", "generatedResumePath": "", "generatedCoverPath": "", "resumeUsedPath": "", "dateApplied": ""})
             existing.append(patch)
             by_id[patch["id"]] = patch
             if key_url:
@@ -2126,21 +2157,21 @@ def main():
         duplicate_count = raw_candidate_count - len(candidates)
         added_rows = []
         for row in candidates:
+            row["ID"] = row.get("ID") or next(id_gen)
             key_url = canonical_url(row.get("URL"))
             key_text = text_key(row)
             if key_url in seen_urls or key_text in seen_text:
                 duplicate_count += 1
-                continue
-            row["ID"] = next(id_gen)
-            rows.append(row)
-            added_rows.append(row)
-            if key_url:
-                seen_urls.add(key_url)
-            if key_text:
-                seen_text.add(key_text)
+            else:
+                rows.append(row)
+                added_rows.append(row)
+                if key_url:
+                    seen_urls.add(key_url)
+                if key_text:
+                    seen_text.add(key_text)
 
         save_csv(rows)
-        dashboard_added, dashboard_updated = merge_dashboard(added_rows)
+        dashboard_added, dashboard_updated = merge_dashboard(candidates)
         summary = {
             "date": date_value,
             "portal": args.portal,
