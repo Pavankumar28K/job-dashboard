@@ -1769,8 +1769,56 @@ def collect_company_site(company_url):
             failures.append(f"{current} failed: {str(error)[:120]}")
             continue
 
-        if "linkedin.com/jobs/view/" in current:
-            import time
+        if "builtin.com/job/" in current:
+            title_match = re.search(r'<title>(.*?)</title>', page, re.I)
+            page_title = clean_text(title_match.group(1)) if title_match else "BuiltIn Job"
+            role = page_title.split(" - ")[0].strip() if " - " in page_title else page_title.replace(" | Built In", "").strip()
+            company_match = re.search(r'is hiring for a .*? in .*?\. Find more details', page)
+            company = "Built In"
+            if company_match:
+                pass # Try to extract company better if needed, but page_title has it: "Role - Company | Built In"
+            if " - " in page_title and " | Built In" in page_title:
+                company = page_title.split(" - ")[1].replace(" | Built In", "").strip()
+                
+            # Extract JD
+            # Basic fallback: strip script, style, head, header, footer, nav
+            body = re.search(r'<body[^>]*>(.*?)</body>', page, re.I | re.S)
+            body_text = body.group(1) if body else page
+            for tag in ['script', 'style', 'header', 'footer', 'nav', 'svg', 'noscript']:
+                body_text = re.sub(rf'<{tag}[^>]*>.*?</{tag}>', ' ', body_text, flags=re.I|re.S)
+            jd_text = clean_text(re.sub(r'<[^>]+>', ' ', body_text))
+            
+            candidates.append({
+                "ID": f"JOB-BUILTIN-{int(time.time()*1000)}",
+                "DateFound": today(),
+                "DatePosted": today(),
+                "Company": company,
+                "Role": role,
+                "Source": "BuiltIn",
+                "URL": current,
+                "Location": "United States",
+                "WorkMode": "Unknown",
+                "EmploymentType": "Not listed",
+                "Pay": "Not listed",
+                "FitScore": "85",
+                "Status": "Ready to review",
+                "Priority": "Medium",
+                "WorkAuthRisk": "Verify OPT EAD",
+                "Notes": jd_text[:420],
+                "JD": jd_text
+            })
+            continue
+
+        if "linkedin.com/jobs/view/" in current or "currentJobId=" in current:
+            if "currentJobId=" in current:
+                m = re.search(r"currentJobId=(\d+)", current)
+                if m:
+                    current = f"https://www.linkedin.com/jobs/view/{m.group(1)}"
+                    try:
+                        
+                        page = fetch(current, timeout=12, retries=1)
+                    except Exception:
+                        pass
             detail = parse_linkedin_detail(page)
             print("EXTRACTED JD LENGTH:", len(detail))
             if detail:
