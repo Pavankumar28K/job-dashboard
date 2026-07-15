@@ -1,4 +1,4 @@
-﻿const CHAT_MODE_KEY = "jobDashboardChatMode";
+const CHAT_MODE_KEY = "jobDashboardChatMode";
 
 const state = {
  jobs: [],
@@ -72,7 +72,10 @@ async function openSettings() {
  $("#settingsTitles").value = (cfg.jobTitles || []).join("\n");
  $("#settingsMustHave").value = (cfg.mustHaveSkills || []).join(", ");
  $("#settingsNiceToHave").value = (cfg.niceToHaveSkills || []).join(", ");
+  $("#settingsSoftSkills").value = (cfg.softSkills || []).join(", ");
+  $("#settingsSoftSkills").value = (cfg.softSkills || []).join(", ");
  $("#settingsDailyTarget").value = cfg.dailyTarget || 50;
+   $("#settingsOpenAiKey").value = cfg.openAiApiKey || "";
  $("#settingsMinScore").value = cfg.minFitScore || 62;
  $("#settingsHighThresh").value = cfg.priorityThresholds?.high || 80;
  $("#settingsMediumThresh").value = cfg.priorityThresholds?.medium || 68;
@@ -102,7 +105,10 @@ async function saveSettings() {
  jobTitles: splitLines($("#settingsTitles").value),
  mustHaveSkills: splitCommas($("#settingsMustHave").value),
  niceToHaveSkills: splitCommas($("#settingsNiceToHave").value),
+    softSkills: splitCommas($("#settingsSoftSkills").value),
+    softSkills: splitCommas($("#settingsSoftSkills").value),
  dailyTarget: Number($("#settingsDailyTarget").value) || 50,
+   openAiApiKey: $("#settingsOpenAiKey").value.trim(),
  minFitScore: Number($("#settingsMinScore").value) || 62,
  priorityThresholds: {
  high: Number($("#settingsHighThresh").value) || 80,
@@ -1506,147 +1512,89 @@ async function sendChat(event) {
 }
 
 // -€-€ Skill suggestions from job titles -€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€
-const TITLE_SKILL_KB = {
- // .NET / C# roles
- "dotnet": { must: ["C#",".NET","ASP.NET Core","REST API","SQL Server"], nice: ["Azure","Docker","TypeScript","Angular","React","Redis","Microservices"] },
- ".net": { must: ["C#",".NET","ASP.NET Core","REST API","SQL Server"], nice: ["Azure","Docker","TypeScript","Angular","React","Redis","Microservices"] },
- "c#": { must: ["C#",".NET","OOP","SQL","Git"], nice: ["Azure","ASP.NET","Docker","TypeScript","Entity Framework"] },
- // Full stack
- "full stack": { must: ["JavaScript","HTML","CSS","REST API","SQL","Git"], nice: ["React","Angular","TypeScript","Node.js","Docker","Azure"] },
- "fullstack": { must: ["JavaScript","HTML","CSS","REST API","SQL","Git"], nice: ["React","Angular","TypeScript","Node.js","Docker","Azure"] },
- // Frontend
- "frontend": { must: ["HTML","CSS","JavaScript","TypeScript","Git"], nice: ["React","Angular","CSS Grid","Accessibility","Testing","Webpack"] },
- "front end": { must: ["HTML","CSS","JavaScript","TypeScript","Git"], nice: ["React","Angular","CSS Grid","Accessibility","Testing","Webpack"] },
- "react": { must: ["React","JavaScript","TypeScript","HTML","CSS","Git"], nice: ["Redux","React Query","Node.js","REST API","Jest","Storybook"] },
- "angular": { must: ["Angular","TypeScript","RxJS","HTML","CSS","Git"], nice: ["REST API","NgRx","Jest","Azure DevOps","Testing"] },
- // Backend
- "backend": { must: ["REST API","SQL","Git","OOP"], nice: ["Node.js","Python","Java","Docker","Redis","Microservices","Cloud"] },
- "back end": { must: ["REST API","SQL","Git","OOP"], nice: ["Node.js","Python","Java","Docker","Redis","Microservices","Cloud"] },
- "node": { must: ["Node.js","JavaScript","REST API","SQL","Git"], nice: ["TypeScript","Docker","Redis","React","AWS","MongoDB"] },
- // Cloud / DevOps
- "cloud": { must: ["Azure","Docker","CI/CD","Git","Linux"], nice: ["Kubernetes","Terraform","Azure DevOps","TypeScript","Python"] },
- "devops": { must: ["Docker","CI/CD","Azure DevOps","Git","Linux"], nice: ["Kubernetes","Terraform","Azure","Bash","Python","Helm"] },
- "azure": { must: ["Azure","CI/CD","Docker","Git"], nice: ["Kubernetes","Azure DevOps","TypeScript","Terraform","Monitoring"] },
- // Software engineer / developer (generic)
- "software engineer": { must: ["OOP","Git","SQL","REST API","Data Structures"], nice: ["Python","JavaScript","Java","Docker","Cloud","TypeScript"] },
- "software developer":{ must: ["OOP","Git","SQL","REST API","Data Structures"], nice: ["Python","JavaScript","Java","Docker","Cloud","TypeScript"] },
- "developer": { must: ["OOP","Git","SQL","REST API"], nice: ["JavaScript","Python","Java","Docker","Cloud","TypeScript"] },
- "engineer": { must: ["OOP","Git","SQL","REST API"], nice: ["JavaScript","Python","Java","Docker","Cloud","TypeScript"] },
- // Microservices / architecture
- "microservices":{ must: ["Microservices","REST API","Docker","SQL","Git"], nice: ["Kubernetes","Cloud","Redis","RabbitMQ","CQRS"] },
- "architect": { must: ["OOP","REST API","SQL","Microservices","Cloud"], nice: ["Docker","Kubernetes","TypeScript","CI/CD","Security"] },
- // Data
- "data": { must: ["SQL","Python","Data Analysis","Statistics","Git"], nice: ["Power BI","Tableau","ETL","Spark","Machine Learning","Cloud"] },
- "analyst": { must: ["SQL","Excel","Data Analysis","Statistics"], nice: ["Python","Power BI","Tableau","Data Modeling","Communication"] },
- "data scientist": { must: ["Python","Statistics","Machine Learning","SQL","Data Analysis"], nice: ["Pandas","NumPy","Scikit-learn","Experiment Design","MLOps"] },
- "machine learning": { must: ["Python","Machine Learning","Statistics","Scikit-learn","Data Analysis"], nice: ["PyTorch","TensorFlow","MLflow","Feature Engineering","MLOps"] },
- "ai/ml": { must: ["Python","Machine Learning","Statistics","SQL","Data Analysis"], nice: ["PyTorch","TensorFlow","MLflow","FastAPI","Cloud"] },
- "mlops": { must: ["Python","Docker","CI/CD","MLflow","Cloud"], nice: ["Kubernetes","Terraform","Monitoring","Feature Stores","Airflow"] },
- "gen ai": { must: ["Python","LLM","Prompt Engineering","REST API","Git"], nice: ["RAG","OpenAI","LangChain","Vector Databases","FastAPI"] },
- "generative ai":{ must: ["Python","LLM","Prompt Engineering","REST API","Git"], nice: ["RAG","OpenAI","LangChain","Vector Databases","FastAPI"] },
- "ai engineer": { must: ["Python","Machine Learning","LLM","REST API","Git"], nice: ["RAG","OpenAI","LangChain","Vector Databases","Docker"] },
- "python": { must: ["Python","OOP","SQL","Git","REST API"], nice: ["FastAPI","Django","Flask","Pandas","Docker"] },
- "java": { must: ["Java","OOP","Spring Boot","REST API","SQL"], nice: ["Microservices","Docker","Kafka","AWS","JUnit"] },
- "qa": { must: ["Testing","API Testing","Git","SQL"], nice: ["Selenium","Playwright","Cypress","CI/CD","JavaScript"] },
- "test": { must: ["Testing","API Testing","Git","SQL"], nice: ["Selenium","Playwright","Cypress","CI/CD","JavaScript"] },
- "security": { must: ["Security","Networking","Linux","OWASP"], nice: ["Cloud Security","SIEM","Python","Incident Response","Threat Modeling"] },
- "salesforce": { must: ["Salesforce","Apex","SOQL","CRM"], nice: ["Lightning","REST API","Data Modeling","Agile","Communication"] },
- "designer": { must: ["UX Design","Figma","User Research","Wireframing"], nice: ["Prototyping","Accessibility","HTML","CSS","Stakeholder Management"] },
- "product": { must: ["Stakeholder Management","Communication","Agile","Data Analysis"], nice: ["SQL","Roadmapping","User Research","Experiment Design","Documentation"] },
- "business analyst": { must: ["Communication","Documentation","SQL","Data Analysis"], nice: ["Agile","Jira","Power BI","Stakeholder Management","Process Mapping"] },
-};
+// -?-? Skill suggestions from job titles (AI Powered) -?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?-?
+async function suggestSkillsFromTitles() {
+  const rawTitles = ($("#settingsTitles").value || "")
+    .split(/\r?\n|,/)
+    .map((title) => title.trim())
+    .filter(Boolean);
+  const titlesText = rawTitles.join(" ").toLowerCase();
+  if (!titlesText.trim()) { toast("Enter at least one job title first"); return; }
 
-function normalizeTitleKeyword(value) {
- return String(value || "").toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim();
-}
+  const btn = $("#suggestSkillsBtn");
+  const originalText = btn.innerText;
+  btn.innerText = "Suggesting...";
+  btn.disabled = true;
 
-function genericSkillsForTitle(title) {
- const normalized = normalizeTitleKeyword(title);
- const must = new Set(["Communication", "Documentation"]);
- const nice = new Set(["Agile", "Jira"]);
- if (/\b(engineer|developer|programmer|architect)\b/.test(normalized)) {
- ["OOP", "Git", "REST API"].forEach((s) => must.add(s));
- ["Docker", "CI/CD", "Cloud"].forEach((s) => nice.add(s));
- }
- if (/\b(analyst|scientist|data|bi|report)\b/.test(normalized)) {
- ["SQL", "Data Analysis", "Statistics"].forEach((s) => must.add(s));
- ["Python", "Power BI", "Tableau"].forEach((s) => nice.add(s));
- }
- if (/\b(manager|lead|director|coordinator|specialist|consultant)\b/.test(normalized)) {
- ["Stakeholder Management", "Communication", "Documentation"].forEach((s) => must.add(s));
- ["Agile", "Process Improvement", "Data Analysis"].forEach((s) => nice.add(s));
- }
- return { must: [...must], nice: [...nice] };
-}
+  try {
+    const response = await fetch("/api/suggest-skills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ titles: rawTitles })
+    });
 
-const BROAD_TITLE_SKILL_KEYS = new Set(["developer", "engineer", "software engineer", "software developer"]);
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Failed to fetch suggestions");
+    }
 
-function suggestSkillsFromTitles() {
- const rawTitles = ($("#settingsTitles").value || "")
- .split(/\r?\n|,/)
- .map((title) => title.trim())
- .filter(Boolean);
- const titlesText = rawTitles.join(" ").toLowerCase();
- if (!titlesText.trim()) { toast("Enter at least one job title first"); return; }
+    const data = await response.json();
+    const mustSet = new Set(data.mustHave || []);
+    const niceSet = new Set(data.niceToHave || []);
+    const softSet = new Set(data.softSkills || []);
 
- const mustSet = new Set();
- const niceSet = new Set();
+    if (!mustSet.size && !niceSet.size && !softSet.size) {
+      toast("No skill suggestions found for these titles - try more specific titles");
+      return;
+    }
 
- for (const title of rawTitles) {
- const generic = genericSkillsForTitle(title);
- generic.must.forEach(s => mustSet.add(s));
- generic.nice.forEach(s => niceSet.add(s));
- const normalizedTitle = normalizeTitleKeyword(title);
- const matchedSpecific = Object.keys(TITLE_SKILL_KB)
- .filter((keyword) => !BROAD_TITLE_SKILL_KEYS.has(keyword))
- .some((keyword) => normalizedTitle.includes(keyword));
- for (const [keyword, skills] of Object.entries(TITLE_SKILL_KB)) {
- if (matchedSpecific && BROAD_TITLE_SKILL_KEYS.has(keyword)) continue;
- if (normalizedTitle.includes(keyword)) {
- skills.must.forEach(s => mustSet.add(s));
- skills.nice.forEach(s => niceSet.add(s));
- }
- }
- }
+    const box = $("#skillSuggestionsBox");
+    const renderTags = (set, containerId) => {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      el.innerHTML = [...set].map(s =>
+        `<span style="background:#e0e7ff;color:#3730a3;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:600;">${s}</span>`
+      ).join("");
+    };
 
- // Remove must-haves from nice list to avoid overlap
- mustSet.forEach(s => niceSet.delete(s));
-
- if (!mustSet.size && !niceSet.size) {
- toast("No skill suggestions found for these titles - try more specific titles");
- return;
- }
-
- const box = $("#skillSuggestionsBox");
- const renderTags = (set, containerId) => {
- const el = document.getElementById(containerId);
- el.innerHTML = [...set].map(s =>
- `<span style="background:#e0e7ff;color:#3730a3;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:600;">${s}</span>`
- ).join("");
- };
-
- renderTags(mustSet, "suggestMustTags");
- renderTags(niceSet, "suggestNiceTags");
- box.dataset.must = [...mustSet].join(", ");
- box.dataset.nice = [...niceSet].join(", ");
- box.style.display = "block";
+    renderTags(mustSet, "suggestMustTags");
+    renderTags(niceSet, "suggestNiceTags");
+    renderTags(softSet, "suggestSoftTags");
+    
+    box.dataset.must = [...mustSet].join(", ");
+    box.dataset.nice = [...niceSet].join(", ");
+    box.dataset.soft = [...softSet].join(", ");
+    box.style.display = "block";
+  } catch (error) {
+    console.error(error);
+    toast("Error suggesting skills: " + error.message);
+  } finally {
+    btn.innerText = originalText;
+    btn.disabled = false;
+  }
 }
 
 function applySkillSuggestions(type) {
- const box = $("#skillSuggestionsBox");
- if (type === "must") {
- const existing = ($("#settingsMustHave").value || "").split(",").map(s => s.trim()).filter(Boolean);
- const suggested = (box.dataset.must || "").split(",").map(s => s.trim()).filter(Boolean);
- const merged = [...new Set([...existing, ...suggested])];
- $("#settingsMustHave").value = merged.join(", ");
- toast("Must-have skills applied OK");
- } else {
- const existing = ($("#settingsNiceToHave").value || "").split(",").map(s => s.trim()).filter(Boolean);
- const suggested = (box.dataset.nice || "").split(",").map(s => s.trim()).filter(Boolean);
- const merged = [...new Set([...existing, ...suggested])];
- $("#settingsNiceToHave").value = merged.join(", ");
- toast("Nice-to-have skills applied OK");
- }
+  const box = $("#skillSuggestionsBox");
+  if (type === "must") {
+    const existing = ($("#settingsMustHave").value || "").split(",").map(s => s.trim()).filter(Boolean);
+    const suggested = (box.dataset.must || "").split(",").map(s => s.trim()).filter(Boolean);
+    const merged = [...new Set([...existing, ...suggested])];
+    $("#settingsMustHave").value = merged.join(", ");
+    toast("Must-have skills applied OK");
+  } else if (type === "nice") {
+    const existing = ($("#settingsNiceToHave").value || "").split(",").map(s => s.trim()).filter(Boolean);
+    const suggested = (box.dataset.nice || "").split(",").map(s => s.trim()).filter(Boolean);
+    const merged = [...new Set([...existing, ...suggested])];
+    $("#settingsNiceToHave").value = merged.join(", ");
+    toast("Nice-to-have skills applied OK");
+  } else if (type === "soft") {
+    const existing = ($("#settingsSoftSkills").value || "").split(",").map(s => s.trim()).filter(Boolean);
+    const suggested = (box.dataset.soft || "").split(",").map(s => s.trim()).filter(Boolean);
+    const merged = [...new Set([...existing, ...suggested])];
+    $("#settingsSoftSkills").value = merged.join(", ");
+    toast("Soft skills applied OK");
+  }
 }
 
 // -€-€ Event setup -€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€-€
@@ -1796,7 +1744,8 @@ if (tf) {
  $("#suggestSkillsBtn").onclick = suggestSkillsFromTitles;
  $("#applyMustSuggestBtn").onclick = () => applySkillSuggestions("must");
  $("#applyNiceSuggestBtn").onclick = () => applySkillSuggestions("nice");
- $("#applyAllSuggestBtn").onclick = () => { applySkillSuggestions("must"); applySkillSuggestions("nice"); };
+ $("#applySoftSuggestBtn").onclick = () => applySkillSuggestions("soft");
+  $("#applyAllSuggestBtn").onclick = () => { applySkillSuggestions("must"); applySkillSuggestions("nice"); applySkillSuggestions("soft"); };
  $("#selectAllSourcesBtn").onclick = () => {
  document.querySelectorAll("[name^='source_']").forEach((cb) => { cb.checked = true; });
  };
@@ -2114,6 +2063,7 @@ const RM_PREP_ONLY = new Set(["DSA","System Design","CS Fundamentals"]); // show
 function _rmBuildPhases(cfg) {
  const must = (cfg.mustHaveSkills||[]).map(s=>s.trim());
  const nice = (cfg.niceToHaveSkills||[]).map(s=>s.trim());
+  const soft = (cfg.softSkills||[]).map(s=>s.trim());
  const phases = {1:[],2:[],3:[],4:[]};
  const done = new Set();
  [...must,...nice].forEach(skill => {
@@ -2249,7 +2199,11 @@ function _rmPrimaryRole(cfg) {
 }
 
 function _rmSkillPool(cfg) {
- return _rmList([...(cfg.mustHaveSkills || []), ...(cfg.niceToHaveSkills || [])]);
+ return _rmList([...(cfg.mustHaveSkills || []), ...(cfg.niceToHaveSkills || []), ...(cfg.softSkills || [])]);
+}
+
+function normalizeTitleKeyword(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim();
 }
 
 function _rmHasAny(text, words) {

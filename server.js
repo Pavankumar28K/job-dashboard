@@ -14,6 +14,7 @@ const JOBS_PATH = path.join(DATA_DIR, "jobs.json");
 const ACTIVITY_PATH = path.join(DATA_DIR, "activity.json");
 const CONFIG_PATH = path.join(ROOT, "config.local.json");
 const APP_SETTINGS_PATH = path.join(ROOT, "config.json");
+const AI_SKILLS_CACHE_PATH = path.join(ROOT, "data", "ai_skills_cache.json");
 const LAST_FINDER_REFRESH_PATH = path.join(ROOT, "logs", "last_refresh.txt");
 const LAST_AUTO_REFRESH_PATH = path.join(ROOT, "logs", "last_auto_refresh.txt");
 
@@ -572,17 +573,23 @@ function textHasSkill(text, skill) {
 }
 
 function jobSkillText(job) {
- return [
- job.role,
- job.company,
- job.source,
- job.location,
- job.employmentType,
- job.workMode,
- job.notes,
- job.jd,
- job.workAuthRisk,
- ].filter(Boolean).join(" ").toLowerCase();
+  let fullJdText = job.jd || "";
+  if (!fullJdText && job.jdPath && fs.existsSync(job.jdPath)) {
+    try {
+      fullJdText = fs.readFileSync(job.jdPath, "utf-8");
+    } catch (e) {}
+  }
+  return [
+    job.role,
+    job.company,
+    job.source,
+    job.location,
+    job.employmentType,
+    job.workMode,
+    job.notes,
+    fullJdText,
+    job.workAuthRisk,
+  ].filter(Boolean).join(" ").toLowerCase();
 }
 
 function configuredSkills() {
@@ -724,6 +731,7 @@ function runGenerator(job, kind) {
  DASHBOARD_JOBS: JOBS_PATH,
  BASE_RESUME_PATH: settings.baseResumePath || "",
  RESUME_PROFILE_DIR: path.join(ROOT, "tools"),
+ OPENAI_API_KEY: settings.openAiApiKey || "",
  },
  stdio: ["ignore", "pipe", "pipe"],
  windowsHide: true,
@@ -812,7 +820,7 @@ async function handleApi(req, res, pathname) {
  if (req.method === "GET" && pathname === "/api/folders") {
  return sendJson(res, 200, {
  appRoot: APP_ROOT,
- tailoredResume: path.join(APP_ROOT, "resume", "tailored resume"),
+ tailoredResume: path.join(APP_ROOT, "resume", "AI tailored resume"),
  coverLetters: path.join(APP_ROOT, "cover letters"),
  jobDescriptions: path.join(APP_ROOT, "job descriptions"),
  standardResume: path.join(APP_ROOT, "resume", "standard resume"),
@@ -831,7 +839,7 @@ async function handleApi(req, res, pathname) {
  if (looksLikeJobDescription(message)) {
  const { job, result } = await createAppliedJobFromJd(message);
  return sendJson(res, 200, {
- reply: `Created ${job.company} - ${job.role}, generated a tailored resume, and moved it to Applied.`,
+ reply: `Created ${job.company} - ${job.role}, generated an AI tailored resume, and moved it to Applied.`,
  action: "jd_applied",
  job,
  result,
@@ -952,7 +960,79 @@ async function handleApi(req, res, pathname) {
  }
  }
 
- if (req.method === "POST" && pathname === "/api/app-config") {
+       if (req.method === "POST" && pathname === "/api/suggest-skills") {
+      try {
+        const body = await readBody(req);
+        const titles = body.titles || [];
+        if (!titles.length) return sendJson(res, 400, { error: "No titles provided" });
+
+        const settings = readAppSettings();
+        if (!settings.openAiApiKey) return sendJson(res, 400, { error: "OpenAI API key not configured" });
+
+        // Check Cache
+        const cacheKey = [...titles].sort().join("|").toLowerCase();
+        let cache = {};
+        try {
+          if (fs.existsSync(AI_SKILLS_CACHE_PATH)) {
+            cache = JSON.parse(fs.readFileSync(AI_SKILLS_CACHE_PATH, "utf8"));
+          }
+        } catch (e) {
+          console.error("Error reading cache", e);
+        }
+        
+        if (cache[cacheKey]) {
+          console.log("Serving AI skills from cache for: " + cacheKey);
+          return sendJson(res, 200, cache[cacheKey]);
+        }
+
+        const prompt = "Given the following job titles: " + titles.join(', ') + ". Suggest 10 must-have technical skills, 10 nice-to-have technical skills, and 5-10 soft skills for these roles. Return ONLY a valid JSON object with three keys: 'mustHave' (array of strings), 'niceToHave' (array of strings), and 'softSkills' (array of strings). Do not include any markdown formatting or explanation.";
+
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + settings.openAiApiKey
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.5
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error("OpenAI API error: " + await response.text());
+        }
+
+        const data = await response.json();
+        const content = data.choices[0].message.content.trim();
+        let parsed;
+        try {
+          parsed = JSON.parse(content);
+        } catch(e) {
+          const cleanContent = content.replace(/^```json/i, '').replace(/```$/i, '').trim();
+          parsed = JSON.parse(cleanContent);
+        }
+
+        // Save to Cache
+        cache[cacheKey] = parsed;
+        try {
+          if (!fs.existsSync(path.dirname(AI_SKILLS_CACHE_PATH))) {
+             fs.mkdirSync(path.dirname(AI_SKILLS_CACHE_PATH), { recursive: true });
+          }
+          fs.writeFileSync(AI_SKILLS_CACHE_PATH, JSON.stringify(cache, null, 2), "utf8");
+        } catch (e) {
+          console.error("Error writing cache", e);
+        }
+
+        return sendJson(res, 200, parsed);
+      } catch (error) {
+        console.error("Error suggesting skills:", error);
+        return sendJson(res, 500, { error: error.message || String(error) });
+      }
+    }
+
+    if (req.method === "POST" && pathname === "/api/app-config") {
  const body = await readBody(req);
  let normalized;
  try {
@@ -1134,5 +1214,6 @@ ensureData()
  console.error(error);
  process.exit(1);
  });
+
 
 

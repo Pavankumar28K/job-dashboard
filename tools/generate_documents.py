@@ -245,37 +245,6 @@ def jd_functional_bullets(job, supported):
     return bullets
 
 
-def ai_rewrite_bullets(existing_bullets_text, jd_text, api_key):
-    client = openai.OpenAI(api_key=api_key)
-    prompt = (
-        "You are an expert resume writer. I will provide the existing bullet points for a specific job experience, and a target job description. "
-        "Your task is to rewrite these bullet points to perfectly align with the job description. "
-        "You are allowed to extrapolate, enhance, and heavily adapt the experience to match the job description. "
-        "Your primary goal is to ensure the resume perfectly aligns with the JD to bypass ATS and stand out to recruiters, as the candidate is a fast learner who can cope with the work.\n\n"
-        "RULES:\n"
-        "1. Keep the total number of bullets between 3 and 6.\n"
-        "2. **CRITICAL for ATS**: Naturally and seamlessly integrate the exact technical keywords, tools, and methodologies mentioned in the job description into the bullet points.\n"
-        "3. **REPLACE TECHNOLOGIES**: If the original bullet points mention technologies, languages, or tools not relevant to the JD (e.g., .NET when the JD asks for Java), you MUST remove or replace them entirely with the technologies requested in the JD. The final bullet points should read as if the candidate's primary experience is exactly what the JD asks for.\n"
-        "4. Output exactly the new list of bullet points, one per line, starting with a capital letter. Do not use asterisks, dashes, or bullet characters. No intro/outro text.\n\n"
-        f"--- ORIGINAL BULLET POINTS ---\n{existing_bullets_text}\n\n"
-        f"--- TARGET JOB DESCRIPTION ---\n{jd_text}"
-    )
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=800
-        )
-        content = response.choices[0].message.content.strip()
-        bullets = [line.strip("-* ").strip() for line in content.split('\n') if line.strip()]
-        return bullets
-    except Exception as e:
-        print(f"OpenAI generation failed: {e}")
-        return []
-
-
 def relevant_experience_bullets(source, job):
     supported = resume_supported_keywords(source, job)
     if not supported:
@@ -531,10 +500,93 @@ def weave_role_alignment_into_experience(doc, job, source):
         inserted += 1
     return inserted
 
+import json
+
+def ai_batch_rewrite_resume(doc_data, jd_text, api_key):
+    client = openai.OpenAI(api_key=api_key)
+    
+    prompt = (
+        "You are an expert resume writer. I will provide a JSON object containing the current Title, Skills section, and multiple "
+        "Experience bullet point blocks from a candidate's resume. I will also provide a Target Job Description.\n"
+        "Your task is to rewrite the Title, Skills, and ALL bullet points to perfectly align with the job description.\n\n"
+        "RULES:\n"
+        "1. **STRICT DOMAIN & COMPANY PRESERVATION**: You are STRICTLY FORBIDDEN from changing the business domain or industry of the candidate's past projects. If the candidate worked at a bank, it MUST remain a banking project. DO NOT inject the Job Description's industry or domain into the candidate's history under any circumstances. You must maintain the original project context.\n"
+        "2. **MAINTAIN POINT COUNT**: Keep the exact same number of bullet points per experience block as the original resume.\n"
+        "3. **TECHNOLOGY REPLACEMENT**: Replace the technologies in the resume with respect to the JD. If there is any alternate technology already mentioned in the resume that solves the same problem, replace the point with the JD's technology. However, if there are important skills already mentioned in the base resume, do NOT remove them.\n"
+        "4. **HIGHLIGHT SKILLS**: You MUST highlight the technical skills and keywords within the bullet points using markdown double asterisks (e.g., **Python**, **AWS**).\n"
+        "5. **FORMATTING**: Keep the proper formatting exactly as the base resume.\n"
+        "6. Return EXACTLY a valid JSON object matching this structure without extra text:\n"
+        "{\n"
+        "  \"title\": \"New Job Title\",\n"
+        "  \"skills\": [\"Skill 1, Skill 2, Skill 3\", \"Skill 4, Skill 5\"],\n"
+        "  \"experiences\": {\n"
+        "    \"exp_0\": [\"Rewritten bullet **skill** 1\", \"Rewritten bullet 2\"]\n"
+        "  }\n"
+        "}\n\n"
+        f"--- TARGET JOB DESCRIPTION ---\n{jd_text}\n\n"
+        f"--- ORIGINAL RESUME JSON ---\n{json.dumps(doc_data, indent=2)}\n"
+    )
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=2000
+        )
+        content = response.choices[0].message.content.strip()
+        clean_content = content.replace('```json', '').replace('```', '').strip()
+        return json.loads(clean_content)
+    except Exception as e:
+        print(f"OpenAI batch generation failed: {e}")
+        return None
+
 def ai_weave_role_alignment(doc, job, api_key):
     jd_text = text_blob(job)
-    rewritten_count = 0
     
+    doc_data = {
+        "title": "",
+        "skills": [],
+        "experiences": {}
+    }
+    
+    # Extract Title
+    title_idx = -1
+    for i in range(min(5, len(doc.paragraphs))):
+        text = doc.paragraphs[i].text.strip()
+        if text and '|' in text and '@' not in text and 'linkedin' not in text.lower():
+            title_idx = i
+            break
+    if title_idx == -1: title_idx = 1
+    doc_data["title"] = doc.paragraphs[title_idx].text.strip()
+    
+    # Extract Skills
+    skills_start, skills_end = -1, -1
+    for i, p in enumerate(doc.paragraphs):
+        text = p.text.strip().lower()
+        if text in ['key skills', 'skills', 'technical skills']:
+            skills_start = i + 1
+            break
+    if skills_start != -1:
+        for i in range(skills_start, len(doc.paragraphs)):
+            text = doc.paragraphs[i].text.strip().lower()
+            if not text or text in ['work experience', 'experience', 'professional experience']:
+                skills_end = i
+                break
+    
+    skills_map = []
+    if skills_start != -1 and skills_end != -1:
+        for i in range(skills_start, skills_end):
+            text = doc.paragraphs[i].text.strip()
+            if text:
+                skills_map.append(i)
+                doc_data["skills"].append(text)
+                
+    # Extract Experiences
+    exp_map = {}
+    exp_counter = 0
+    
+    # Assume experience_ranges and is_probable_company_header exist
     for start, end in experience_ranges(doc):
         paragraphs = doc.paragraphs
         headers = []
@@ -542,9 +594,7 @@ def ai_weave_role_alignment(doc, job, api_key):
             following = paragraphs[index + 1 : min(end, index + 7)]
             if is_probable_company_header(paragraphs[index], following):
                 headers.append(index)
-
-        if not headers:
-            headers = [start - 1]
+        if not headers: headers = [start - 1]
 
         for position, header_index in enumerate(headers):
             next_header = headers[position + 1] if position + 1 < len(headers) else end
@@ -553,31 +603,63 @@ def ai_weave_role_alignment(doc, job, api_key):
             old_bullets = []
             for idx in block_indices:
                 if is_insertable_experience_line(paragraphs[idx]):
-                    old_bullets.append((idx, paragraphs[idx]))
+                    old_bullets.append(idx)
             
-            if not old_bullets:
-                continue
-                
-            old_bullets_text = "\n".join(p.text.strip() for idx, p in old_bullets)
-            new_bullets = ai_rewrite_bullets(old_bullets_text, jd_text, api_key)
-            
-            if new_bullets:
-                first_bullet_idx, first_p = old_bullets[0]
-                style = first_p.style if is_bullet_like(first_p) else None
-                base_text = first_p.text.strip()
-                prefix = "- " if base_text.startswith("-") else ""
-                
-                for bullet in reversed(new_bullets):
-                    insert_paragraph_after(first_p, f"{prefix}{bullet}", style=style)
-                    rewritten_count += 1
-                
-                for idx, p in old_bullets:
-                    element = p._element
-                    element.getparent().remove(element)
-                    p._p = p._element = None
-                    
-    return rewritten_count
+            if old_bullets:
+                exp_id = f"exp_{exp_counter}"
+                doc_data["experiences"][exp_id] = [paragraphs[idx].text.strip() for idx in old_bullets]
+                exp_map[exp_id] = old_bullets
+                exp_counter += 1
 
+    print(f"Batching prompt with {len(exp_map)} experiences...")
+    rewritten_data = ai_batch_rewrite_resume(doc_data, jd_text, api_key)
+    if not rewritten_data:
+        return 0
+        
+    rewritten_count = 0
+    
+    def apply_text(paragraph, new_text):
+        # Clear existing runs safely
+        if paragraph.runs:
+            for r in paragraph.runs:
+                r.text = ""
+        
+        # Parse **bold** markdown and create runs
+        parts = new_text.split('**')
+        is_bold = False
+        for part in parts:
+            if part:
+                run = paragraph.add_run(part)
+                if is_bold:
+                    run.bold = True
+            is_bold = not is_bold 
+
+    # Apply Title
+    if "title" in rewritten_data and rewritten_data["title"]:
+        apply_text(doc.paragraphs[title_idx], rewritten_data["title"])
+        rewritten_count += 1
+        
+    # Apply Skills
+    if "skills" in rewritten_data and len(rewritten_data["skills"]) == len(skills_map):
+        for idx, new_text in zip(skills_map, rewritten_data["skills"]):
+            apply_text(doc.paragraphs[idx], new_text)
+            rewritten_count += 1
+            
+    # Apply Experiences
+    if "experiences" in rewritten_data:
+        for exp_id, new_bullets in rewritten_data["experiences"].items():
+            if exp_id in exp_map:
+                old_indices = exp_map[exp_id]
+                
+                for i in range(min(len(old_indices), len(new_bullets))):
+                    apply_text(doc.paragraphs[old_indices[i]], new_bullets[i])
+                    rewritten_count += 1
+                    
+                if len(new_bullets) < len(old_indices):
+                    for i in range(len(new_bullets), len(old_indices)):
+                        apply_text(doc.paragraphs[old_indices[i]], "")
+
+    return rewritten_count
 
 def paragraph(doc, text, size=10.5, bold=False, color=None, align=None, after=7):
     p = doc.add_paragraph()
@@ -702,3 +784,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
